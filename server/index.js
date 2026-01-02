@@ -5,6 +5,7 @@ import https from 'https';
 import path from 'path';
 import express from 'express';
 import { WebSocketServer } from 'ws';
+import webpush from 'web-push';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -20,6 +21,17 @@ const TURN_RELAY_MAX_PORT = Number(process.env.TURN_RELAY_MAX_PORT ?? 0);
 const TLS_KEY_PATH = process.env.TLS_KEY_PATH ?? '';
 const TLS_CERT_PATH = process.env.TLS_CERT_PATH ?? '';
 const USE_HTTPS = Boolean(TLS_KEY_PATH && TLS_CERT_PATH);
+
+// Optional Web Push (background notifications). If keys are not provided, the app
+// still supports in-tab notifications when the page is open.
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? '';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT ?? 'mailto:lrcom@localhost';
+const PUSH_ENABLED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+
+if (PUSH_ENABLED) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 const app = express();
 
@@ -68,6 +80,11 @@ app.get('/turn', (req, res) => {
   // Optional helper endpoint (not required by UI), returns time-limited TURN creds.
   // No authentication is implemented (per spec). For private use, keep it behind your network.
   res.json(makeTurnConfig());
+});
+
+app.get('/api/push/public-key', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ enabled: PUSH_ENABLED, publicKey: PUSH_ENABLED ? VAPID_PUBLIC_KEY : null });
 });
 
 function makeTurnCredentials() {
@@ -143,6 +160,26 @@ const nameToId = new Map();
  * rooms: roomId -> { id, members:Set<string> }
  */
 const rooms = new Map();
+
+/**
+ * Web Push subscriptions (ephemeral server-side; memory only): userId -> subscription
+ * NOTE: browsers persist subscriptions client-side until they expire or are revoked.
+ */
+const pushSubscriptions = new Map();
+
+async function sendPushToUser(userId, payload) {
+  if (!PUSH_ENABLED) return;
+  const sub = pushSubscriptions.get(userId);
+  if (!sub) return;
+  try {
+    await webpush.sendNotification(sub, JSON.stringify(payload));
+  } catch (err) {
+    const statusCode = err?.statusCode;
+    if (statusCode === 404 || statusCode === 410) {
+      pushSubscriptions.delete(userId);
+    }
+  }
+}
 
 function getTurnHostLabel() {
   // Best-effort parse from the first TURN url: turn:host:port?transport=...
@@ -277,6 +314,15 @@ function broadcastChat(fromUser, text) {
   for (const u of users.values()) {
     if (!u.name) continue;
     if (u.ws.readyState === 1) u.ws.send(msg);
+
+    if (u.id !== fromUser.id) {
+      void sendPushToUser(u.id, {
+        title: 'LRcom message',
+        body: `${fromUser.name}: ${text}`,
+        tag: 'lrcom-chat',
+        url: '/',
+      });
+    }
   }
 }
 
@@ -312,6 +358,13 @@ function sendPrivateChat(fromUser, toUser, text) {
 
   if (fromUser.ws.readyState === 1) fromUser.ws.send(msg);
   if (toUser.ws.readyState === 1) toUser.ws.send(msg);
+
+  void sendPushToUser(toUser.id, {
+    title: 'LRcom private message',
+    body: `${fromUser.name}: ${text}`,
+    tag: 'lrcom-pm',
+    url: '/',
+  });
 }
 
 function parsePrivatePrefix(text) {
@@ -356,6 +409,7 @@ function closeUser(userId) {
   }
 
   users.delete(userId);
+  pushSubscriptions.delete(userId);
   if (name && nameToId.get(name) === userId) nameToId.delete(name);
 
   if (name) broadcastSystem(`${name} left.`);
@@ -409,6 +463,20 @@ wss.on('connection', (ws, req) => {
 
     if (!msg || typeof msg.type !== 'string') {
       send(ws, { type: 'error', code: 'BAD_MESSAGE' });
+      return;
+    }
+
+    // Push subscription can arrive before a name is set.
+    if (msg.type === 'pushSubscribe') {
+      if (!PUSH_ENABLED) return;
+      if (msg.subscription && typeof msg.subscription === 'object') {
+        pushSubscriptions.set(userId, msg.subscription);
+      }
+      return;
+    }
+
+    if (msg.type === 'pushUnsubscribe') {
+      pushSubscriptions.delete(userId);
       return;
     }
 
@@ -472,6 +540,14 @@ wss.on('connection', (ws, req) => {
       callee.roomId = rid;
 
       send(callee.ws, { type: 'incomingCall', from: user.id, fromName: user.name, roomId: rid });
+
+      void sendPushToUser(callee.id, {
+        title: 'Incoming call',
+        body: `From ${user.name}`,
+        tag: 'lrcom-call',
+        url: '/',
+        requireInteraction: true,
+      });
       send(ws, { type: 'callStartResult', ok: true });
       broadcastPresence();
       return;

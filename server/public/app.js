@@ -38,6 +38,7 @@ const filterSystemEl = qs('filterSystem');
 
 const themeToggleSetupBtn = qs('themeToggleSetup');
 const themeToggleHeaderBtn = qs('themeToggleHeader');
+const enableNotificationsBtn = qs('enableNotifications');
 
 const setupForm = qs('setupForm');
 
@@ -101,6 +102,146 @@ let chatMessages = [];
 let ringtoneCtx;
 let ringtoneOsc;
 let ringtoneGain;
+
+let wakeLock = null;
+let swRegistration = null;
+
+function notificationsSupported() {
+  return typeof window !== 'undefined' && 'Notification' in window;
+}
+
+function notificationsGranted() {
+  return notificationsSupported() && Notification.permission === 'granted';
+}
+
+function updateNotificationsButton() {
+  if (!enableNotificationsBtn) return;
+  if (!notificationsSupported()) {
+    enableNotificationsBtn.textContent = 'Notifications unavailable';
+    enableNotificationsBtn.disabled = true;
+    return;
+  }
+
+  if (Notification.permission === 'granted') {
+    enableNotificationsBtn.textContent = 'Notifications on';
+  } else if (Notification.permission === 'denied') {
+    enableNotificationsBtn.textContent = 'Notifications blocked';
+  } else {
+    enableNotificationsBtn.textContent = 'Enable notifications';
+  }
+}
+
+async function ensureServiceWorker() {
+  try {
+    if (!('serviceWorker' in navigator)) return null;
+    if (swRegistration) return swRegistration;
+    // sw.js is served from the site root, so scope './' covers the app.
+    swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    return swRegistration;
+  } catch {
+    return null;
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+async function tryEnableWebPushForThisSocket() {
+  // Optional: requires VAPID keys on the server and browser Push support.
+  try {
+    if (!notificationsGranted()) return false;
+    if (!('serviceWorker' in navigator)) return false;
+    if (!('PushManager' in window)) return false;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+    const res = await fetch('./api/push/public-key', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data?.enabled || !data?.publicKey) return false;
+
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+    const subscription = existing ?? await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(data.publicKey),
+    });
+
+    send({ type: 'pushSubscribe', subscription });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function notify(title, body, opts = {}) {
+  try {
+    if (!notificationsGranted()) return;
+    // Prefer notifications when not visible.
+    if (!document.hidden) return;
+
+    // eslint-disable-next-line no-new
+    new Notification(title, {
+      body,
+      tag: opts.tag ?? 'lrcom',
+      renotify: true,
+    });
+  } catch {
+    // ignore
+  }
+}
+
+function vibrate(pattern) {
+  try {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  } catch {
+    // ignore
+  }
+}
+
+async function enableWakeLock() {
+  // Wake Lock only works while visible; helps keep the app active while open.
+  try {
+    if (!('wakeLock' in navigator)) return;
+    if (document.visibilityState !== 'visible') return;
+    if (wakeLock) return;
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => {
+      wakeLock = null;
+    });
+  } catch {
+    // ignore
+  }
+}
+
+async function disableWakeLock() {
+  try {
+    if (wakeLock) await wakeLock.release();
+  } catch {
+    // ignore
+  } finally {
+    wakeLock = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void enableWakeLock();
+  else void disableWakeLock();
+});
+
+async function enableNotifications() {
+  if (!notificationsSupported()) return;
+  const perm = await Notification.requestPermission();
+  updateNotificationsButton();
+  if (perm !== 'granted') return;
+
+  await ensureServiceWorker();
+  // Web Push is optional and best-effort.
+  void tryEnableWebPushForThisSocket();
+}
 
 function isMobileLayout() {
   return window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
@@ -277,8 +418,9 @@ function renderUsers(users) {
     });
 
     const callBtn = document.createElement('button');
-    callBtn.textContent = 'Call';
-    callBtn.disabled = Boolean(u.busy) || Boolean(currentPeer);
+    callBtn.textContent = roomId ? 'Add' : 'Call';
+    // Disable if the other user is already in a call, or already connected in our room.
+    callBtn.disabled = Boolean(u.busy) || (roomId && peerNames.has(u.id));
     callBtn.addEventListener('click', () => {
       closeUsersIfMobile();
       startCall(u.id, u.name);
@@ -518,6 +660,9 @@ async function onIncomingCall(from, fromName) {
   setText(callerNameEl, fromName);
   showIncoming(true);
   startRingtone();
+
+  notify('Incoming call', `From ${fromName}`, { tag: 'lrcom-call' });
+  vibrate([200, 100, 200, 100, 400]);
 }
 
 async function onIncomingCallRoom(from, fromName, incomingRoomId) {
@@ -526,6 +671,9 @@ async function onIncomingCallRoom(from, fromName, incomingRoomId) {
   setText(callerNameEl, fromName);
   showIncoming(true);
   startRingtone();
+
+  notify('Incoming call', `From ${fromName}`, { tag: 'lrcom-call' });
+  vibrate([200, 100, 200, 100, 400]);
 }
 
 async function acceptIncoming() {
@@ -592,6 +740,11 @@ async function doJoin() {
   ws.addEventListener('open', () => {
     logDebug('ws open');
     send({ type: 'setName', name: desiredName });
+
+    // If user already granted notifications, attempt SW + push wiring for this socket.
+    if (notificationsGranted()) {
+      void ensureServiceWorker().then(() => tryEnableWebPushForThisSocket());
+    }
   });
 
   ws.addEventListener('message', async (ev) => {
@@ -640,6 +793,9 @@ async function doJoin() {
 
       updateResponsiveChrome();
 
+      updateNotificationsButton();
+      void enableWakeLock();
+
       // Request mic access only after joining
       try {
         await ensureMic();
@@ -665,6 +821,12 @@ async function doJoin() {
       };
       chatMessages.push(entry);
       renderChatMessage(entry);
+
+      // Notify on messages from others when we're not in the foreground.
+      if (msg.fromName && msg.fromName !== myName) {
+        const prefix = msg.private ? 'Private message' : 'Message';
+        notify(prefix, `${msg.fromName}: ${msg.text}`, { tag: msg.private ? 'lrcom-pm' : 'lrcom-chat' });
+      }
       return;
     }
 
@@ -863,6 +1025,12 @@ applyTheme('system');
 
 themeToggleSetupBtn?.addEventListener('click', cycleTheme);
 themeToggleHeaderBtn?.addEventListener('click', cycleTheme);
+
+enableNotificationsBtn?.addEventListener('click', () => {
+  void enableNotifications();
+});
+
+updateNotificationsButton();
 
 if (debugEnabled && debugPanel) {
   debugPanel.classList.remove('hidden');

@@ -499,7 +499,8 @@ button.danger {
 
 /* New layout */
 .setup {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px 16px;
@@ -516,6 +517,7 @@ button.danger {
 
 .app {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -636,8 +638,43 @@ button.danger {
   min-height: 0;
 }
 
-.chat-header {
-  padding-bottom: 10px;
+.chat-top {
+  padding: 12px;
+}
+
+.chat-call {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-call .call-active {
+  justify-content: space-between;
+}
+
+.chat-call .call-peer {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.filter-item {
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.filter-item input {
+  flex: 0 0 auto;
 }
 
 .chat-messages {
@@ -666,8 +703,7 @@ button.danger {
   .header {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
-      "left right"
-      "center center";
+      "left right";
   }
 
   .header-left { grid-area: left; }
@@ -694,9 +730,10 @@ button.danger {
 
   .sidebar {
     position: fixed;
-    top: 64px;
+    bottom: 0;
     left: 0;
     height: calc(100vh - 64px);
+    height: calc(100dvh - 64px);
     width: min(88vw, 360px);
     transform: translateX(-110%);
     transition: transform 160ms ease-in-out;

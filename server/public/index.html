@@ -53,20 +53,10 @@
             <div class="brand"><img class="logo" src="./lrcom_logo.png" alt="" /><span id="appNameHeader">Last</span></div>
           </div>
 
-          <div class="header-center">
-            <div id="callIdle" class="muted">Not in call</div>
-            <div id="callActive" class="call-active hidden">
-              <div class="call-peer">
-                <div class="muted">In call with</div>
-                <div id="peer" class="me"></div>
-              </div>
-              <button id="hangup" class="danger" type="button">Hang up</button>
-            </div>
-            <div id="remoteAudios"></div>
-            <div id="callStatus" class="status"></div>
-          </div>
-
           <div class="header-right">
+            <button id="filterBtn" class="secondary icon-only" type="button" aria-label="Filters">
+              <svg class="icon" aria-hidden="true" focusable="false"><use xlink:href="./icons.svg#filter"></use></svg>
+            </button>
             <div id="accountControls" class="account-controls">
               <div class="who">
                 <span class="muted">You:</span>
@@ -97,11 +87,18 @@
           </aside>
 
           <section id="chat" class="chat">
-            <div class="chat-header">
-              <div class="chat-filters">
-                <label class="chat-filter"><input id="filterPrivate" type="checkbox" checked /> Private</label>
-                <label class="chat-filter"><input id="filterPublic" type="checkbox" checked /> Public</label>
-                <label class="chat-filter"><input id="filterSystem" type="checkbox" checked /> System</label>
+            <div class="card chat-top">
+              <div class="chat-call">
+                <div id="callIdle" class="muted">Not in call</div>
+                <div id="callActive" class="call-active hidden">
+                  <div class="call-peer">
+                    <div class="muted">In call with</div>
+                    <div id="peer" class="me"></div>
+                  </div>
+                  <button id="hangup" class="danger" type="button">Hang up</button>
+                </div>
+                <div id="remoteAudios"></div>
+                <div id="callStatus" class="status"></div>
               </div>
             </div>
 
@@ -142,6 +139,21 @@
           <div class="modal-actions">
             <a id="aboutRepo" href="https://github.com/Preon1/last" target="_blank" rel="noopener noreferrer">Git repository</a>
             <button id="aboutClose" class="secondary" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="filterModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="filterTitle">
+        <div class="modal-card">
+          <div class="modal-title" id="filterTitle">Chat filters</div>
+          <div class="filter-list">
+            <label class="filter-item"><input id="filterPrivate" type="checkbox" checked /> Private</label>
+            <label class="filter-item"><input id="filterPublic" type="checkbox" checked /> Public</label>
+            <label class="filter-item"><input id="filterSystem" type="checkbox" checked /> System</label>
+          </div>
+          <div class="modal-actions">
+            <div></div>
+            <button id="filterClose" class="secondary" type="button">Close</button>
           </div>
         </div>
       </div>

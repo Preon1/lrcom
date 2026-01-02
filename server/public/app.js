@@ -48,6 +48,10 @@ const aboutLinkSidebarBtn = qs('aboutLinkSidebar');
 const aboutModalEl = qs('aboutModal');
 const aboutCloseBtn = qs('aboutClose');
 
+const filterBtn = qs('filterBtn');
+const filterModalEl = qs('filterModal');
+const filterCloseBtn = qs('filterClose');
+
 const setupForm = qs('setupForm');
 
 const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
@@ -96,6 +100,16 @@ function openAbout() {
 function closeAbout() {
   if (!aboutModalEl) return;
   aboutModalEl.classList.add('hidden');
+}
+
+function openFilters() {
+  if (!filterModalEl) return;
+  filterModalEl.classList.remove('hidden');
+}
+
+function closeFilters() {
+  if (!filterModalEl) return;
+  filterModalEl.classList.add('hidden');
 }
 
 const THEME_ORDER = ['system', 'light', 'dark'];
@@ -1441,8 +1455,18 @@ aboutModalEl?.addEventListener('click', (e) => {
   if (e.target === aboutModalEl) closeAbout();
 });
 
+filterBtn?.addEventListener('click', openFilters);
+filterCloseBtn?.addEventListener('click', closeFilters);
+filterModalEl?.addEventListener('click', (e) => {
+  // Click outside the card closes.
+  if (e.target === filterModalEl) closeFilters();
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeAbout();
+  if (e.key === 'Escape') {
+    closeAbout();
+    closeFilters();
+  }
 });
 
 setView('setup');

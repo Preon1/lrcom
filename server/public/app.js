@@ -99,6 +99,9 @@ let iceConfig;
 
 let chatMessages = [];
 
+let replyContextMenuEl = null;
+let replyContextTarget = null;
+
 let ringtoneCtx;
 let ringtoneOsc;
 let ringtoneGain;
@@ -529,6 +532,175 @@ function getChatKind({ fromName, private: isPrivate }) {
   return 'public';
 }
 
+function formatChatTime(atIso) {
+  const at = new Date(atIso);
+  return isNaN(at.getTime()) ? String(atIso) : at.toLocaleString('en-US');
+}
+
+function parseReplyPrefix(text) {
+  if (typeof text !== 'string') return null;
+  if (!text.startsWith('@reply [')) return null;
+  const close = text.indexOf(']');
+  if (close === -1) return null;
+
+  const after = text.slice(close + 1);
+  if (!after.startsWith(' \n') && !after.startsWith('\n') && !after.startsWith(' \r\n') && !after.startsWith('\r\n')) return null;
+
+  const inside = text.slice(7, close); // after "@reply ["
+  const sep = inside.lastIndexOf(' • ');
+  if (sep === -1) return null;
+  const replyToName = inside.slice(0, sep).trim();
+  const replyToTime = inside.slice(sep + 3).trim();
+
+  // Skip optional leading space before newline.
+  const bodyStart = text.startsWith('@reply [') && text[close + 1] === ' ' ? close + 3 : close + 2;
+  const replyBody = text.slice(bodyStart).replace(/^\r?\n/, '');
+
+  if (!replyToName || !replyToTime) return null;
+  return { replyToName, replyToTime, replyBody };
+}
+
+function ensureReplyContextMenu() {
+  if (replyContextMenuEl) return replyContextMenuEl;
+  const el = document.createElement('div');
+  el.className = 'context-menu hidden';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'secondary';
+  btn.textContent = 'Reply';
+  btn.addEventListener('click', () => {
+    if (replyContextTarget) triggerReply(replyContextTarget);
+    hideReplyContextMenu();
+  });
+
+  el.appendChild(btn);
+  document.body.appendChild(el);
+  replyContextMenuEl = el;
+
+  document.addEventListener('click', () => hideReplyContextMenu());
+  window.addEventListener('scroll', () => hideReplyContextMenu(), { passive: true });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideReplyContextMenu();
+  });
+
+  return el;
+}
+
+function hideReplyContextMenu() {
+  if (!replyContextMenuEl) return;
+  replyContextMenuEl.classList.add('hidden');
+  replyContextTarget = null;
+}
+
+function showReplyContextMenu(x, y, target) {
+  const el = ensureReplyContextMenu();
+  replyContextTarget = target;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.classList.remove('hidden');
+}
+
+function triggerReply(target) {
+  if (!chatInput) return;
+  const prefix = `@reply [${target.fromName} • ${target.time}] \n`;
+  chatInput.value = prefix;
+  chatInput.focus();
+  chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+  autoGrowChatInput();
+}
+
+function flashChatLine(el) {
+  el.classList.remove('chat-flash');
+  // Force reflow so animation retriggers.
+  void el.offsetWidth;
+  el.classList.add('chat-flash');
+  setTimeout(() => el.classList.remove('chat-flash'), 900);
+}
+
+function scrollToReferencedMessage(replyToName, replyToTime) {
+  if (!chatMessagesEl) return;
+  const kids = Array.from(chatMessagesEl.children);
+  const match = kids.find((el) => el?.dataset?.fromName === replyToName && el?.dataset?.time === replyToTime);
+  if (!match) return;
+  match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  flashChatLine(match);
+}
+
+function replyIconSvg() {
+  // Placeholder: user will provide the final SVG.
+  return '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M10 9V5l-7 7 7 7v-4.1c7.1 0 10.9 2.2 14 7.1-1-8.1-5.1-13.9-14-13.9z"/></svg>';
+}
+
+function attachSwipeReply(lineEl, target) {
+  const inner = lineEl.querySelector('.chat-line-inner');
+  const action = lineEl.querySelector('.chat-reply-action');
+  if (!inner || !action) return;
+
+  let startX = 0;
+  let startY = 0;
+  let active = false;
+  let moved = false;
+  let lastDx = 0;
+
+  const reset = () => {
+    active = false;
+    moved = false;
+    lastDx = 0;
+    inner.style.transition = 'transform 160ms ease-in-out';
+    inner.style.transform = 'translateX(0px)';
+    action.style.opacity = '0';
+    setTimeout(() => {
+      inner.style.transition = '';
+    }, 180);
+  };
+
+  lineEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    startX = e.clientX;
+    startY = e.clientY;
+    active = true;
+    moved = false;
+    lastDx = 0;
+    inner.style.transition = 'none';
+    try { lineEl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  });
+
+  lineEl.addEventListener('pointermove', (e) => {
+    if (!active || e.pointerType !== 'touch') return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if (!moved) {
+      if (Math.abs(dx) < 8) return;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        active = false;
+        return;
+      }
+      moved = true;
+    }
+
+    // Only allow left swipe.
+    const width = lineEl.getBoundingClientRect().width || 1;
+    const maxReveal = Math.min(88, width * 0.45);
+    const clamped = Math.max(-maxReveal, Math.min(0, dx));
+    lastDx = clamped;
+    inner.style.transform = `translateX(${clamped}px)`;
+    action.style.opacity = String(Math.min(1, Math.abs(clamped) / maxReveal));
+    e.preventDefault();
+  }, { passive: false });
+
+  lineEl.addEventListener('pointerup', (e) => {
+    if (!active || e.pointerType !== 'touch') return;
+    const width = lineEl.getBoundingClientRect().width || 1;
+    const shouldTrigger = Math.abs(lastDx) > width * 0.2;
+    reset();
+    if (shouldTrigger) triggerReply(target);
+  });
+
+  lineEl.addEventListener('pointercancel', () => reset());
+}
+
 function applyChatFilter() {
   if (!chatMessagesEl) return;
   const showPrivate = filterPrivateEl?.checked ?? true;
@@ -547,15 +719,34 @@ function applyChatFilter() {
 function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }) {
   if (!chatMessagesEl) return;
 
+  const time = formatChatTime(atIso);
+  const reply = parseReplyPrefix(text);
+  const isReply = Boolean(reply);
+
   const line = document.createElement('div');
   line.className = 'chat-line';
   line.dataset.kind = getChatKind({ fromName, private: isPrivate });
 
+  line.dataset.fromName = fromName;
+  line.dataset.time = time;
+  if (isReply) {
+    line.classList.add('chat-reply');
+    line.dataset.replyToName = reply.replyToName;
+    line.dataset.replyToTime = reply.replyToTime;
+  }
+
+  const swipe = document.createElement('div');
+  swipe.className = 'chat-swipe';
+
+  const action = document.createElement('div');
+  action.className = 'chat-reply-action';
+  action.innerHTML = replyIconSvg();
+
+  const inner = document.createElement('div');
+  inner.className = 'chat-line-inner';
+
   const meta = document.createElement('div');
   meta.className = 'chat-meta';
-  const at = new Date(atIso);
-
-  const time = isNaN(at.getTime()) ? atIso : at.toLocaleString();
   if (isPrivate) {
     const badge = document.createElement('span');
     badge.className = 'chat-badge chat-badge-private';
@@ -683,10 +874,40 @@ async function ensurePeerConnection(peerId) {
   });
 
   return pc;
-}
 
-async function startCall(peerId, peerName) {
-  setText(lobbyStatus, roomId ? 'Inviting…' : 'Calling…');
+    if (isReply) {
+      const banner = document.createElement('div');
+      banner.className = 'chat-reply-banner';
+      banner.textContent = `Reply to ${reply.replyToName} • ${reply.replyToTime}`;
+      body.textContent = reply.replyBody;
+      inner.appendChild(meta);
+      inner.appendChild(banner);
+      inner.appendChild(body);
+      inner.addEventListener('click', () => {
+        scrollToReferencedMessage(reply.replyToName, reply.replyToTime);
+      });
+    } else {
+      body.textContent = text;
+      inner.appendChild(meta);
+      inner.appendChild(body);
+    }
+
+    swipe.appendChild(action);
+    swipe.appendChild(inner);
+    line.appendChild(swipe);
+
+    // Desktop: right-click context menu to reply.
+    line.addEventListener('contextmenu', (e) => {
+      if (isMobileTextEntry()) return;
+      if (fromName === 'System') return;
+      e.preventDefault();
+      showReplyContextMenu(e.pageX, e.pageY, { fromName, time });
+    });
+
+    // Mobile: swipe left to reply.
+    if (fromName !== 'System') {
+      attachSwipeReply(line, { fromName, time });
+    }
   peerNames.set(peerId, peerName);
   updateCallHeader();
   send({ type: 'callStart', to: peerId });

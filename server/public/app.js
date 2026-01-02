@@ -60,6 +60,9 @@ const debugLogEl = qs('debugLog');
 
 let appName = 'Last';
 
+let outgoingCallPending = false;
+let outgoingCallPendingName = '';
+
 function logDebug(...args) {
   const ts = new Date().toISOString();
   const line = `[${ts}] ${args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`;
@@ -222,7 +225,11 @@ async function tryEnableWebPushForThisSocket() {
     const data = await res.json();
     if (!data?.enabled || !data?.publicKey) return false;
 
-    const reg = await navigator.serviceWorker.ready;
+    // Only register the service worker if Web Push is actually enabled.
+    // (Some browsers log a console error if sw.js fetch fails due to TLS/cert.)
+    const reg = await ensureServiceWorker();
+    if (!reg) return false;
+
     const existing = await reg.pushManager.getSubscription();
     const subscription = existing ?? await reg.pushManager.subscribe({
       userVisibleOnly: true,
@@ -297,8 +304,8 @@ async function enableNotifications() {
   updateNotificationsButton();
   if (perm !== 'granted') return;
 
-  await ensureServiceWorker();
   // Web Push is optional and best-effort.
+  // (SW registration happens only if the server has VAPID keys configured.)
   void tryEnableWebPushForThisSocket();
 }
 
@@ -592,6 +599,8 @@ function resetRoomState() {
   roomId = null;
   pendingIncomingFrom = null;
   pendingIncomingRoomId = null;
+  outgoingCallPending = false;
+  outgoingCallPendingName = '';
   for (const peerId of Array.from(pcs.keys())) closePeerConnection(peerId);
   peerNames.clear();
   setText(callStatus, '');
@@ -1046,6 +1055,15 @@ async function startCall(peerId, peerName) {
 
   setText(lobbyStatus, roomId ? 'Inviting…' : 'Calling…');
   peerNames.set(peerId, peerName);
+
+  // When starting a fresh outgoing call, show a clear “waiting for pickup” status
+  // in the call panel (mobile users won’t see the sidebar lobby status).
+  if (!roomId) {
+    outgoingCallPending = true;
+    outgoingCallPendingName = String(peerName ?? '').trim();
+    setText(callStatus, outgoingCallPendingName ? `Calling ${outgoingCallPendingName}…` : 'Calling…');
+  }
+
   updateCallHeader();
   send({ type: 'callStart', to: peerId });
 }
@@ -1146,7 +1164,7 @@ async function doJoin() {
 
     // If user already granted notifications, attempt SW + push wiring for this socket.
     if (notificationsGranted()) {
-      void ensureServiceWorker().then(() => tryEnableWebPushForThisSocket());
+      void tryEnableWebPushForThisSocket();
     }
   });
 
@@ -1239,14 +1257,29 @@ async function doJoin() {
     if (msg.type === 'callStartResult') {
       if (!msg.ok) {
         setText(lobbyStatus, `Call failed: ${msg.reason}`);
+        if (outgoingCallPending && !roomId) {
+          outgoingCallPending = false;
+          outgoingCallPendingName = '';
+          setText(callStatus, `Call failed: ${msg.reason}`);
+        }
       } else {
         setText(lobbyStatus, 'Ringing…');
+        if (outgoingCallPending && !roomId) {
+          setText(callStatus, outgoingCallPendingName ? `Ringing ${outgoingCallPendingName}…` : 'Ringing…');
+        }
       }
       return;
     }
 
     if (msg.type === 'callRejected') {
       setText(lobbyStatus, 'Call rejected.');
+
+      if (outgoingCallPending && !roomId) {
+        outgoingCallPending = false;
+        outgoingCallPendingName = '';
+        setText(callStatus, 'Call rejected.');
+      }
+
       // If we were not in a room yet, reset call state.
       if (!roomId) resetCallState();
       return;
@@ -1254,6 +1287,11 @@ async function doJoin() {
 
     if (msg.type === 'callEnded') {
       setText(lobbyStatus, 'Call ended.');
+      if (outgoingCallPending && !roomId) {
+        outgoingCallPending = false;
+        outgoingCallPendingName = '';
+        setText(callStatus, 'Call ended.');
+      }
       resetCallState();
       return;
     }
@@ -1261,6 +1299,8 @@ async function doJoin() {
     if (msg.type === 'roomPeers') {
       // You joined a room; peers list are existing members.
       roomId = msg.roomId ?? roomId;
+      outgoingCallPending = false;
+      outgoingCallPendingName = '';
       try {
         for (const p of (msg.peers ?? [])) {
           if (!p?.id || p.id === myId) continue;

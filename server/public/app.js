@@ -383,6 +383,29 @@ async function ensureMic() {
   return localStream;
 }
 
+function micErrorMessage(err) {
+  const name = err?.name;
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return 'Microphone blocked. Allow microphone access in your browser and try again.';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'No microphone found.';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'Microphone is in use by another app.';
+  }
+  if (name === 'SecurityError') {
+    return 'Microphone requires HTTPS (or localhost).';
+  }
+  return 'Microphone access failed.';
+}
+
+function handleMicError(err) {
+  logDebug('mic error', { name: err?.name, message: err?.message });
+  // Prefer surfacing on the lobby status line; it’s visible in most states.
+  setText(lobbyStatus, micErrorMessage(err));
+}
+
 function renderUsers(users) {
   usersEl.innerHTML = '';
 
@@ -603,7 +626,8 @@ function showReplyContextMenu(x, y, target) {
 
 function triggerReply(target) {
   if (!chatInput) return;
-  const prefix = `@reply [${target.fromName} • ${target.time}] \n`;
+  const stamp = target.atIso ?? target.time;
+  const prefix = `@reply [${target.fromName} • ${stamp}] \n`;
   chatInput.value = prefix;
   chatInput.focus();
   chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
@@ -621,8 +645,38 @@ function flashChatLine(el) {
 function scrollToReferencedMessage(replyToName, replyToTime) {
   if (!chatMessagesEl) return;
   const kids = Array.from(chatMessagesEl.children);
-  const match = kids.find((el) => el?.dataset?.fromName === replyToName && el?.dataset?.time === replyToTime);
+  const replyLooksIso = typeof replyToTime === 'string' && /\d{4}-\d{2}-\d{2}T/.test(replyToTime);
+  const exact = kids.find((el) => {
+    if (el?.dataset?.fromName !== replyToName) return false;
+    if (replyLooksIso) return el?.dataset?.atIso === replyToTime;
+    return el?.dataset?.time === replyToTime;
+  });
+
+  // Tolerant ISO matching (handles minor formatting differences like missing milliseconds).
+  let match = exact;
+  if (!match && replyLooksIso) {
+    const targetMs = Date.parse(replyToTime);
+    if (!Number.isNaN(targetMs)) {
+      match = kids.find((el) => {
+        if (el?.dataset?.fromName !== replyToName) return false;
+        const ms = Date.parse(el?.dataset?.atIso ?? '');
+        if (Number.isNaN(ms)) return false;
+        return Math.abs(ms - targetMs) <= 1000;
+      });
+    }
+  }
+
   if (!match) return;
+
+  // If filters are hiding the target, auto-enable the relevant filter so scrolling is visible.
+  if (match.classList.contains('chat-hidden')) {
+    const kind = match.dataset.kind;
+    if (kind === 'private' && filterPrivateEl) filterPrivateEl.checked = true;
+    if (kind === 'public' && filterPublicEl) filterPublicEl.checked = true;
+    if (kind === 'system' && filterSystemEl) filterSystemEl.checked = true;
+    applyChatFilter();
+  }
+
   match.scrollIntoView({ behavior: 'smooth', block: 'center' });
   flashChatLine(match);
 }
@@ -729,6 +783,7 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
 
   line.dataset.fromName = fromName;
   line.dataset.time = time;
+  line.dataset.atIso = atIso;
   if (isReply) {
     line.classList.add('chat-reply');
     line.dataset.replyToName = reply.replyToName;
@@ -767,15 +822,20 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
   if (isReply) {
     const banner = document.createElement('div');
     banner.className = 'chat-reply-banner';
-    banner.textContent = `Reply to ${reply.replyToName} • ${reply.replyToTime}`;
+    const replyTimeLabel = /\d{4}-\d{2}-\d{2}T/.test(reply.replyToTime)
+      ? formatChatTime(reply.replyToTime)
+      : reply.replyToTime;
+    banner.textContent = `Reply to ${reply.replyToName} • ${replyTimeLabel}`;
+    banner.style.cursor = 'pointer';
+    banner.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      scrollToReferencedMessage(reply.replyToName, reply.replyToTime);
+    });
     body.textContent = reply.replyBody;
     inner.appendChild(meta);
     inner.appendChild(banner);
     inner.appendChild(body);
-
-    inner.addEventListener('click', () => {
-      scrollToReferencedMessage(reply.replyToName, reply.replyToTime);
-    });
   } else {
     body.textContent = text;
     inner.appendChild(meta);
@@ -791,12 +851,12 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
     if (isMobileTextEntry()) return;
     if (fromName === 'System') return;
     e.preventDefault();
-    showReplyContextMenu(e.pageX, e.pageY, { fromName, time });
+    showReplyContextMenu(e.pageX, e.pageY, { fromName, time, atIso });
   });
 
   // Mobile: swipe left to reply.
   if (fromName !== 'System') {
-    attachSwipeReply(line, { fromName, time });
+    attachSwipeReply(line, { fromName, time, atIso });
   }
 
   chatMessagesEl.appendChild(line);
@@ -892,9 +952,16 @@ async function ensurePeerConnection(peerId) {
     if (a) a.srcObject = ev.streams[0];
   };
 
-  const stream = await ensureMic();
-  for (const track of stream.getTracks()) {
-    pc.addTrack(track, stream);
+  try {
+    const stream = await ensureMic();
+    for (const track of stream.getTracks()) {
+      pc.addTrack(track, stream);
+    }
+  } catch (err) {
+    // If mic is blocked/denied, don’t leave a half-initialized peer connection around.
+    try { pc.close(); } catch { /* ignore */ }
+    pcs.delete(peerId);
+    throw err;
   }
 
   pc.addEventListener('connectionstatechange', () => {
@@ -909,6 +976,14 @@ async function ensurePeerConnection(peerId) {
 }
 
 async function startCall(peerId, peerName) {
+  try {
+    // Request mic on a direct user gesture (Call/Add click) to avoid browser denial.
+    await ensureMic();
+  } catch (err) {
+    handleMicError(err);
+    return;
+  }
+
   setText(lobbyStatus, roomId ? 'Inviting…' : 'Calling…');
   peerNames.set(peerId, peerName);
   updateCallHeader();
@@ -938,13 +1013,20 @@ async function onIncomingCallRoom(from, fromName, incomingRoomId) {
 }
 
 async function acceptIncoming() {
+  if (!pendingIncomingFrom) return;
+
+  try {
+    // Request mic on a direct user gesture (Accept click).
+    await ensureMic();
+  } catch (err) {
+    handleMicError(err);
+    return;
+  }
+
   stopRingtone();
   showIncoming(false);
-
-  if (!pendingIncomingFrom) return;
   setText(callStatus, 'Connecting…');
   updateCallHeader();
-
   send({ type: 'callAccept', from: pendingIncomingFrom, roomId: pendingIncomingRoomId });
 }
 
@@ -1056,13 +1138,6 @@ async function doJoin() {
 
       updateNotificationsButton();
       void enableWakeLock();
-
-      // Request mic access only after joining
-      try {
-        await ensureMic();
-      } catch {
-        setText(lobbyStatus, 'Microphone permission is required.');
-      }
       return;
     }
 
@@ -1126,10 +1201,17 @@ async function doJoin() {
     if (msg.type === 'roomPeers') {
       // You joined a room; peers list are existing members.
       roomId = msg.roomId ?? roomId;
-      for (const p of (msg.peers ?? [])) {
-        if (!p?.id || p.id === myId) continue;
-        peerNames.set(p.id, p.name ?? '');
-        await ensurePeerConnection(p.id);
+      try {
+        for (const p of (msg.peers ?? [])) {
+          if (!p?.id || p.id === myId) continue;
+          peerNames.set(p.id, p.name ?? '');
+          await ensurePeerConnection(p.id);
+        }
+      } catch (err) {
+        handleMicError(err);
+        // Bail out of the call cleanly if we can’t access the mic.
+        hangup();
+        return;
       }
       setText(lobbyStatus, '');
       setText(callStatus, 'Connecting…');
@@ -1145,7 +1227,14 @@ async function doJoin() {
       updateCallHeader();
 
       // Existing members create offers to the new peer.
-      const pc = await ensurePeerConnection(p.id);
+      let pc;
+      try {
+        pc = await ensurePeerConnection(p.id);
+      } catch (err) {
+        handleMicError(err);
+        hangup();
+        return;
+      }
       setText(callStatus, 'Connecting…');
       const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
       await pc.setLocalDescription(offer);
@@ -1177,7 +1266,14 @@ async function doJoin() {
       if (payload.kind === 'offer') {
         const peerId = msg.from;
         if (!peerId) return;
-        const pc = await ensurePeerConnection(peerId);
+        let pc;
+        try {
+          pc = await ensurePeerConnection(peerId);
+        } catch (err) {
+          handleMicError(err);
+          hangup();
+          return;
+        }
 
         await pc.setRemoteDescription(payload.sdp);
         const answer = await pc.createAnswer();

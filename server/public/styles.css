@@ -98,7 +98,6 @@ body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
-  height: 100vh;
 
   background-image:
     radial-gradient(900px 520px at 12% 10%, var(--spot-1), transparent 55%),
@@ -106,6 +105,13 @@ body {
     radial-gradient(820px 520px at 22% 92%, var(--spot-3), transparent 58%),
     radial-gradient(720px 460px at 86% 86%, var(--spot-4), transparent 60%);
   background-attachment: fixed;
+
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
 }
 
 h1 { margin: 0 0 16px; }
@@ -382,11 +388,19 @@ button.danger {
 }
 
 @keyframes chatFlash {
-  0% { background: var(--border); }
-  100% { background: transparent; }
+  0% {
+    background: var(--card-bg);
+    outline-color: var(--button-bg);
+  }
+  100% {
+    background: transparent;
+    outline-color: transparent;
+  }
 }
 
 .chat-line.chat-flash {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
   animation: chatFlash 900ms ease-out;
 }
 

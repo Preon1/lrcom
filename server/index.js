@@ -643,7 +643,9 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      const pm = parsePrivatePrefix(raw);
+      // Replies use a reserved prefix that intentionally begins with '@'.
+      // Don’t treat it as a private message to user named "reply".
+      const pm = raw.startsWith('@reply [') ? null : parsePrivatePrefix(raw);
       if (pm) {
         const toId = nameToId.get(pm.toName);
         const toUser = toId ? users.get(toId) : null;

@@ -247,6 +247,13 @@ function isMobileLayout() {
   return window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
 }
 
+function isMobileTextEntry() {
+  // Keyboard behavior should follow device input characteristics, not viewport width.
+  // Touch devices (phones/tablets) should treat Enter as newline; Send button submits.
+  return (navigator.maxTouchPoints ?? 0) > 0
+    || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+}
+
 function setUsersOpen(open) {
   if (!appShellEl) return;
   appShellEl.classList.toggle('users-open', Boolean(open));
@@ -579,7 +586,38 @@ function sendChat() {
   const text = (chatInput?.value ?? '').trim();
   if (!text) return;
   send({ type: 'chatSend', text });
-  if (chatInput) chatInput.value = '';
+  if (chatInput) {
+    chatInput.value = '';
+    autoGrowChatInput();
+  }
+}
+
+function autoGrowChatInput() {
+  if (!chatInput) return;
+  // Only makes sense for textarea.
+  if (chatInput.tagName !== 'TEXTAREA') return;
+
+  // If empty, collapse to a single-row height.
+  if (!chatInput.value) {
+    chatInput.style.height = 'auto';
+    chatInput.style.overflowY = 'hidden';
+    return;
+  }
+
+  // Reset to measure.
+  chatInput.style.height = 'auto';
+
+  const cs = window.getComputedStyle(chatInput);
+  const lineHeight = Number.parseFloat(cs.lineHeight) || 20;
+  const paddingTop = Number.parseFloat(cs.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(cs.paddingBottom) || 0;
+  const borderTop = Number.parseFloat(cs.borderTopWidth) || 0;
+  const borderBottom = Number.parseFloat(cs.borderBottomWidth) || 0;
+  const maxHeight = (lineHeight * 8) + paddingTop + paddingBottom + borderTop + borderBottom;
+
+  const target = Math.min(chatInput.scrollHeight, maxHeight);
+  chatInput.style.height = `${target}px`;
+  chatInput.style.overflowY = chatInput.scrollHeight > maxHeight ? 'auto' : 'hidden';
 }
 
 async function ensurePeerConnection(peerId) {
@@ -1008,8 +1046,22 @@ window.addEventListener('beforeunload', () => {
 });
 
 chatSendBtn?.addEventListener('click', sendChat);
+chatInput?.addEventListener('input', autoGrowChatInput);
+chatInput?.addEventListener('focus', autoGrowChatInput);
+
 chatInput?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChat();
+  if (e.key !== 'Enter') return;
+
+  // Mobile: Enter inserts newline; send is only via the Send button.
+  if (isMobileTextEntry()) {
+    return;
+  }
+
+  // Desktop: Enter sends, Shift+Enter inserts newline.
+  if (!e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
 });
 
 filterPrivateEl?.addEventListener('change', applyChatFilter);
@@ -1022,6 +1074,8 @@ updateResponsiveChrome();
 window.addEventListener('resize', updateResponsiveChrome);
 
 applyTheme('system');
+
+autoGrowChatInput();
 
 themeToggleSetupBtn?.addEventListener('click', cycleTheme);
 themeToggleHeaderBtn?.addEventListener('click', cycleTheme);

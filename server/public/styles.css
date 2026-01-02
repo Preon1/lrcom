@@ -200,7 +200,8 @@ button.join {
 
 label { min-width: 88px; }
 
-input {
+input,
+textarea {
   flex: 1;
   padding: 10px 12px;
   border-radius: 10px;
@@ -208,6 +209,12 @@ input {
   outline: none;
   background: var(--card-bg);
   color: var(--text);
+}
+
+textarea {
+  font-family: inherit;
+  line-height: 1.35;
+  resize: none;
 }
 
 button {
@@ -489,8 +496,14 @@ button.danger {
 .chat-input {
   display: flex;
   gap: 12px;
-  align-items: center;
+  align-items: flex-end;
   margin-top: 12px;
+}
+
+#chatInput {
+  min-height: 42px;
+  max-height: calc(1.35em * 8 + 22px);
+  overflow-y: hidden;
 }
 
 .mobile-only {

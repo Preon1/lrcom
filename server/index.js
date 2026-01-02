@@ -128,8 +128,9 @@ function safeChatText(input) {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
   if (trimmed.length < 1 || trimmed.length > 500) return null;
-  // Avoid control characters
-  if (/[\u0000-\u001F\u007F]/.test(trimmed)) return null;
+  // Avoid control characters (but allow newlines for multiline chat)
+  // Allow: LF (\n) and CR (\r). Disallow everything else in C0 controls.
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(trimmed)) return null;
   return trimmed;
 }
 

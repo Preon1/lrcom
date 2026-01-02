@@ -16,6 +16,7 @@
   --surface: #f6f7f9;
   --button-bg: var(--brand-dark);
   --button-text: #ffffff;
+  --secondary-text: var(--brand-dark);
   --danger: #a30012;
 
   /* Background spots (light) */
@@ -37,6 +38,7 @@
     --surface: #0f1420;
     --button-bg: var(--brand-dark);
     --button-text: #e7ecf4;
+    --secondary-text: var(--text);
     --danger: #d84a5b;
 
     /* Background spots (dark) */
@@ -60,6 +62,7 @@ html[data-theme="light"] {
   --surface: #f6f7f9;
   --button-bg: var(--brand-dark);
   --button-text: #ffffff;
+  --secondary-text: var(--brand-dark);
   --danger: #a30012;
 
   --spot-1: rgba(0, 113, 183, 0.12);
@@ -81,6 +84,7 @@ html[data-theme="dark"] {
   --surface: #0f1420;
   --button-bg: var(--brand-dark);
   --button-text: #e7ecf4;
+  --secondary-text: var(--text);
   --danger: #d84a5b;
 
   --spot-1: rgba(0, 113, 183, 0.14);
@@ -217,7 +221,8 @@ button {
 
 button.secondary {
   background: var(--card-bg);
-  color: var(--button-bg);
+  color: var(--secondary-text);
+  border-color: var(--border);
 }
 
 button.danger {
@@ -414,6 +419,12 @@ button.danger {
   align-items: center;
 }
 
+.account-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .who {
   display: flex;
   gap: 8px;
@@ -441,6 +452,12 @@ button.danger {
 }
 
 .sidebar-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-controls {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
@@ -493,6 +510,22 @@ button.danger {
   .header-center { grid-area: center; }
 
   .mobile-only { display: inline-flex; }
+
+  /* Account controls move into the Users sidebar on mobile (JS re-parents). */
+  .account-controls {
+    display: none;
+  }
+
+  .sidebar-controls .account-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .sidebar-controls .who {
+    justify-content: space-between;
+  }
 
   .sidebar {
     position: fixed;

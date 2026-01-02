@@ -48,7 +48,6 @@
       <section id="appShell" class="app hidden">
         <header class="header">
           <div class="header-left">
-            <button id="toggleUsers" class="secondary mobile-only" type="button">Users</button>
             <div class="brand"><img class="logo" src="./lrcom_logo.png" alt="" /><span>LRcom</span></div>
           </div>
 
@@ -66,12 +65,15 @@
           </div>
 
           <div class="header-right">
-            <div class="who">
-              <span class="muted">You:</span>
-              <span id="me" class="who-name"></span>
+            <div id="accountControls" class="account-controls">
+              <div class="who">
+                <span class="muted">You:</span>
+                <span id="me" class="who-name"></span>
+              </div>
+              <button id="themeToggleHeader" class="secondary" type="button" aria-label="Toggle theme">Theme: System</button>
+              <button id="leave" class="secondary" type="button">Logout</button>
             </div>
-            <button id="themeToggleHeader" class="secondary" type="button" aria-label="Toggle theme">Theme: System</button>
-            <button id="leave" class="secondary" type="button">Logout</button>
+            <button id="toggleUsers" class="secondary mobile-only" type="button">Users</button>
           </div>
         </header>
 
@@ -79,6 +81,7 @@
           <aside id="sidebar" class="sidebar">
             <div class="sidebar-title">Online</div>
             <ul id="users" class="users"></ul>
+            <div id="sidebarControls" class="sidebar-controls"></div>
             <div class="sidebar-footer">
               <div id="lobbyStatus" class="status"></div>
               <div id="techInfo" class="muted"></div>
@@ -100,8 +103,6 @@
               <input id="chatInput" maxlength="500" autocomplete="off" inputmode="text" placeholder="Type a message..." />
               <button id="chatSend" type="button">Send</button>
             </div>
-
-            <div class="muted">Messages are not saved; they exist only while you’re connected.</div>
 
             <section id="debugPanel" class="card hidden">
               <details open>

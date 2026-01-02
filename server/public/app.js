@@ -115,6 +115,23 @@ function closeUsersIfMobile() {
   if (isMobileLayout()) setUsersOpen(false);
 }
 
+const accountControlsEl = qs('accountControls');
+const sidebarControlsEl = qs('sidebarControls');
+
+function updateResponsiveChrome() {
+  if (!accountControlsEl || !sidebarControlsEl || !appShellEl) return;
+  if (isMobileLayout()) {
+    if (accountControlsEl.parentElement !== sidebarControlsEl) {
+      sidebarControlsEl.appendChild(accountControlsEl);
+    }
+  } else {
+    const headerRight = document.querySelector('.header-right');
+    if (headerRight && accountControlsEl.parentElement !== headerRight) {
+      headerRight.insertBefore(accountControlsEl, headerRight.firstChild);
+    }
+  }
+}
+
 function setView(view) {
   // New layout: only two main views.
   const joined = view !== 'setup';
@@ -609,6 +626,20 @@ async function doJoin() {
       setText(setupStatus, '');
       setView('lobby');
 
+      // Show ephemeral disclaimer as the first System message for this session.
+      clearChat();
+      const first = {
+        atIso: new Date().toISOString(),
+        fromName: 'System',
+        text: 'Messages are not saved; they exist only while you\u2019re connected.',
+        private: false,
+        toName: null,
+      };
+      chatMessages.push(first);
+      renderChatMessage(first);
+
+      updateResponsiveChrome();
+
       // Request mic access only after joining
       try {
         await ensureMic();
@@ -801,7 +832,9 @@ document.addEventListener('click', (e) => {
   setUsersOpen(false);
 });
 
-leaveBtn.addEventListener('click', leave);
+leaveBtn.addEventListener('click', () => {
+  if (confirm('Logout and leave LRcom?')) leave();
+});
 hangupBtn.addEventListener('click', hangup);
 
 acceptBtn.addEventListener('click', acceptIncoming);
@@ -822,6 +855,9 @@ filterPublicEl?.addEventListener('change', applyChatFilter);
 filterSystemEl?.addEventListener('change', applyChatFilter);
 
 setView('setup');
+
+updateResponsiveChrome();
+window.addEventListener('resize', updateResponsiveChrome);
 
 applyTheme('system');
 

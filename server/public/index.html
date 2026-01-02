@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LRcom</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>LRcom</h1>
+
+      <section id="setup" class="card">
+        <p class="muted">
+          This app is ephemeral: no accounts, no cookies, no saved sessions.
+        </p>
+
+        <div class="row">
+          <label for="name">Your name</label>
+          <input id="name" maxlength="32" autocomplete="off" inputmode="text" placeholder="e.g. Alex" />
+        </div>
+
+        <div class="row">
+          <button id="join">Join</button>
+          <span id="setupStatus" class="status"></span>
+        </div>
+
+        <p class="hint">
+          Microphone permission will be requested after you join.
+        </p>
+      </section>
+
+      <section id="lobby" class="card hidden">
+        <div class="row between">
+          <div>
+            <div class="muted">You are</div>
+            <div id="me" class="me"></div>
+          </div>
+          <button id="leave" class="secondary">Leave</button>
+        </div>
+
+        <h2>Online</h2>
+        <ul id="users" class="users"></ul>
+        <div id="lobbyStatus" class="status"></div>
+      </section>
+
+      <section id="call" class="card hidden">
+        <div class="row between">
+          <div>
+            <div class="muted">In call with</div>
+            <div id="peer" class="me"></div>
+          </div>
+          <button id="hangup" class="danger">Hang up</button>
+        </div>
+
+        <audio id="remoteAudio" autoplay></audio>
+        <div id="callStatus" class="status"></div>
+      </section>
+
+      <section id="debugPanel" class="card hidden">
+        <details open>
+          <summary>Debug</summary>
+          <pre id="debugLog" class="debug"></pre>
+        </details>
+      </section>
+
+      <div id="incoming" class="incoming hidden" role="dialog" aria-modal="true">
+        <div class="incoming-card">
+          <div class="incoming-title">Incoming call</div>
+          <div id="callerName" class="incoming-name"></div>
+          <div class="row">
+            <button id="accept">Accept</button>
+            <button id="reject" class="secondary">Reject</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

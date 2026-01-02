@@ -1,0 +1,54 @@
+services:
+  lrcom:
+    build: .
+    ports:
+      - "8443:8443"
+    environment:
+      # For real microphone access remotely, serve over HTTPS (or use a reverse proxy).
+      # If you mount certs, set TLS_KEY_PATH/TLS_CERT_PATH accordingly.
+      - HOST=0.0.0.0
+      - PORT=8443
+
+      # HTTPS: auto-generate a self-signed certificate in the container.
+      # Add your LAN IP to TLS_SANS so browsers accept it for that address.
+      - AUTO_TLS=1
+      - TLS_SANS=${LRCOM_TLS_SANS:-DNS:localhost,IP:127.0.0.1}
+
+      # TURN (optional): generated time-limited credentials based on shared secret.
+      # IMPORTANT: the TURN host must be reachable by browsers.
+      # For local testing, localhost works. For LAN/Internet use, set LRCOM_TURN_HOST.
+      - TURN_URLS=turn:${LRCOM_TURN_HOST:-localhost}:3478?transport=udp,turn:${LRCOM_TURN_HOST:-localhost}:3478?transport=tcp
+      - TURN_SECRET=${LRCOM_TURN_SECRET:-change-me}
+      - TURN_USERNAME_TTL_SECONDS=3600
+
+      # Optional startup log
+      - STARTUP_LOG=0
+
+    depends_on:
+      - coturn
+
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    environment:
+      - LRCOM_TURN_EXTERNAL_IP=${LRCOM_TURN_EXTERNAL_IP:-}
+    command:
+      - sh
+      - -c
+      - |
+        turnserver -n \
+          --log-file=stdout \
+          --use-auth-secret \
+          --static-auth-secret=${LRCOM_TURN_SECRET:-change-me} \
+          --realm=lrcom \
+          --no-cli \
+          --no-tls \
+          --no-dtls \
+          --listening-ip=0.0.0.0 \
+          ${LRCOM_TURN_EXTERNAL_IP:+--external-ip=$LRCOM_TURN_EXTERNAL_IP} \
+          --min-port=${LRCOM_TURN_MIN_PORT:-49160} \
+          --max-port=${LRCOM_TURN_MAX_PORT:-49169}
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "${LRCOM_TURN_MIN_PORT:-49160}-${LRCOM_TURN_MAX_PORT:-49169}:${LRCOM_TURN_MIN_PORT:-49160}-${LRCOM_TURN_MAX_PORT:-49169}/udp"

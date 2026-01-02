@@ -69,6 +69,19 @@ body {
 
 h1 { margin: 0 0 16px; }
 
+.logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.brand-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -277,6 +290,9 @@ button.danger {
 .brand {
   font-weight: 800;
   font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .header-center {

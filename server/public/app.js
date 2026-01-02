@@ -19,6 +19,7 @@ const peerEl = qs('peer');
 const setupStatus = qs('setupStatus');
 const lobbyStatus = qs('lobbyStatus');
 const callStatus = qs('callStatus');
+const callTimerEl = qs('callTimer');
 const callIdleEl = qs('callIdle');
 const callActiveEl = qs('callActive');
 const techInfoEl = qs('techInfo');
@@ -62,6 +63,45 @@ let appName = 'Last';
 
 let outgoingCallPending = false;
 let outgoingCallPendingName = '';
+
+let callTimerStartMs = null;
+let callTimerInterval = null;
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  if (hours > 0) return `${hours}:${mm}:${ss}`;
+  return `${mm}:${ss}`;
+}
+
+function updateCallTimer() {
+  if (!callTimerEl) return;
+  if (callTimerStartMs == null) return;
+  callTimerEl.textContent = formatDuration(Date.now() - callTimerStartMs);
+}
+
+function startCallTimerIfNeeded() {
+  if (!callTimerEl) return;
+  if (callTimerStartMs != null) return;
+  callTimerStartMs = Date.now();
+  callTimerEl.classList.remove('hidden');
+  updateCallTimer();
+  if (callTimerInterval) clearInterval(callTimerInterval);
+  callTimerInterval = setInterval(updateCallTimer, 1000);
+}
+
+function resetCallTimer() {
+  if (callTimerInterval) clearInterval(callTimerInterval);
+  callTimerInterval = null;
+  callTimerStartMs = null;
+  if (!callTimerEl) return;
+  callTimerEl.textContent = '00:00';
+  callTimerEl.classList.add('hidden');
+}
 
 function logDebug(...args) {
   const ts = new Date().toISOString();
@@ -583,6 +623,7 @@ function updateCallHeader() {
   } else {
     callActiveEl?.classList.add('hidden');
     callIdleEl?.classList.remove('hidden');
+    resetCallTimer();
   }
 }
 
@@ -601,6 +642,7 @@ function resetRoomState() {
   pendingIncomingRoomId = null;
   outgoingCallPending = false;
   outgoingCallPendingName = '';
+  resetCallTimer();
   for (const peerId of Array.from(pcs.keys())) closePeerConnection(peerId);
   peerNames.clear();
   setText(callStatus, '');
@@ -1030,6 +1072,13 @@ async function ensurePeerConnection(peerId) {
 
   pc.addEventListener('connectionstatechange', () => {
     if (!pcs.has(peerId)) return;
+
+    if (pc.connectionState === 'connected') {
+      // Call duration starts when the first peer connection is actually connected.
+      startCallTimerIfNeeded();
+      if ((callStatus?.textContent ?? '') !== 'Connected') setText(callStatus, 'Connected');
+    }
+
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       closePeerConnection(peerId);
       updateCallHeader();

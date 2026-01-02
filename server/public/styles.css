@@ -648,6 +648,18 @@ button.danger {
   gap: 8px;
 }
 
+.call-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.call-timer {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .chat-call .call-active {
   justify-content: space-between;
 }

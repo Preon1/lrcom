@@ -21,6 +21,7 @@ const lobbyStatus = qs('lobbyStatus');
 const callStatus = qs('callStatus');
 const callIdleEl = qs('callIdle');
 const callActiveEl = qs('callActive');
+const voiceInfoEl = qs('voiceInfo');
 
 const acceptBtn = qs('accept');
 const rejectBtn = qs('reject');
@@ -123,6 +124,31 @@ function showIncoming(show) {
 
 function setText(el, text) {
   el.textContent = text ?? '';
+}
+
+function renderVoiceInfo(voice) {
+  if (!voiceInfoEl) return;
+  if (!voice || (!voice.turnHost && voice.relayPortsTotal == null)) {
+    setText(voiceInfoEl, '');
+    return;
+  }
+
+  const parts = [];
+  if (voice.turnHost) parts.push(`TURN ${voice.turnHost}`);
+
+  if (typeof voice.relayPortsUsedEstimate === 'number' && typeof voice.relayPortsTotal === 'number') {
+    parts.push(`UDP relay ports ~${voice.relayPortsUsedEstimate}/${voice.relayPortsTotal}`);
+  } else if (typeof voice.relayPortsTotal === 'number') {
+    parts.push(`UDP relay ports ${voice.relayPortsTotal}`);
+  } else if (typeof voice.relayPortsUsedEstimate === 'number') {
+    parts.push(`UDP relay ports in use ~${voice.relayPortsUsedEstimate}`);
+  }
+
+  if (typeof voice.capacityCallsEstimate === 'number') {
+    parts.push(`est capacity ~${voice.capacityCallsEstimate} calls`);
+  }
+
+  setText(voiceInfoEl, parts.join(' • '));
 }
 
 function wsUrl() {
@@ -516,6 +542,7 @@ function leave() {
   setText(setupStatus, '');
   setText(lobbyStatus, '');
   setText(callStatus, '');
+  setText(voiceInfoEl, '');
   setView('setup');
 }
 
@@ -543,6 +570,8 @@ joinBtn.addEventListener('click', async () => {
     if (msg.type === 'hello') {
       myId = msg.id;
       iceConfig = msg.turn;
+
+      renderVoiceInfo(msg.voice);
 
       if (msg.turnWarning) {
         logDebug('TURN warning', msg.turnWarning);
@@ -578,6 +607,7 @@ joinBtn.addEventListener('click', async () => {
 
     if (msg.type === 'presence') {
       renderUsers(msg.users ?? []);
+      renderVoiceInfo(msg.voice);
       return;
     }
 

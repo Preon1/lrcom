@@ -21,6 +21,10 @@ services:
       - TURN_SECRET=${LRCOM_TURN_SECRET:-change-me}
       - TURN_USERNAME_TTL_SECONDS=3600
 
+      # TURN relay port range (used for capacity display)
+      - TURN_RELAY_MIN_PORT=${LRCOM_TURN_MIN_PORT:-49160}
+      - TURN_RELAY_MAX_PORT=${LRCOM_TURN_MAX_PORT:-49169}
+
       # Optional startup log
       - STARTUP_LOG=0
 

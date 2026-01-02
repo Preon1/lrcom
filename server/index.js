@@ -14,6 +14,9 @@ const TURN_URLS = (process.env.TURN_URLS ?? '').split(',').map((s) => s.trim()).
 const TURN_SECRET = process.env.TURN_SECRET ?? '';
 const TURN_USERNAME_TTL_SECONDS = Number(process.env.TURN_USERNAME_TTL_SECONDS ?? 3600);
 
+const TURN_RELAY_MIN_PORT = Number(process.env.TURN_RELAY_MIN_PORT ?? 0);
+const TURN_RELAY_MAX_PORT = Number(process.env.TURN_RELAY_MAX_PORT ?? 0);
+
 const TLS_KEY_PATH = process.env.TLS_KEY_PATH ?? '';
 const TLS_CERT_PATH = process.env.TLS_CERT_PATH ?? '';
 const USE_HTTPS = Boolean(TLS_KEY_PATH && TLS_CERT_PATH);
@@ -136,9 +139,70 @@ const wss = new WebSocketServer({ server });
 const users = new Map();
 const nameToId = new Map();
 
+function getTurnHostLabel() {
+  // Best-effort parse from the first TURN url: turn:host:port?transport=...
+  const first = TURN_URLS[0];
+  if (!first) return null;
+  const m = first.match(/^turns?:([^:?]+)(?::(\d+))?/i);
+  if (!m) return null;
+  const host = m[1];
+  const port = m[2] ?? '3478';
+  return `${host}:${port}`;
+}
+
+function getActiveCallCount() {
+  // Each established/ringing call sets inCallWith on both ends.
+  // Count unique pairs by stable ordering.
+  const seen = new Set();
+  let calls = 0;
+  for (const u of users.values()) {
+    if (!u.inCallWith) continue;
+    const a = u.id;
+    const b = u.inCallWith;
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    calls++;
+  }
+  return calls;
+}
+
+function getVoiceStats() {
+  const turnHost = getTurnHostLabel();
+
+  const hasRelayRange = Number.isFinite(TURN_RELAY_MIN_PORT)
+    && Number.isFinite(TURN_RELAY_MAX_PORT)
+    && TURN_RELAY_MIN_PORT > 0
+    && TURN_RELAY_MAX_PORT >= TURN_RELAY_MIN_PORT;
+
+  const relayPortsTotal = hasRelayRange
+    ? (TURN_RELAY_MAX_PORT - TURN_RELAY_MIN_PORT + 1)
+    : null;
+
+  const activeCalls = getActiveCallCount();
+
+  // Estimation:
+  // - WebRTC audio typically uses rtcp-mux (single component) => ~1 UDP relay port per client allocation.
+  // - A call has 2 clients => ~2 relay ports in use (worst-case if both sides relay).
+  const relayPortsUsedEstimateRaw = activeCalls * 2;
+  const relayPortsUsedEstimate = relayPortsTotal == null
+    ? relayPortsUsedEstimateRaw
+    : Math.min(relayPortsUsedEstimateRaw, relayPortsTotal);
+
+  const capacityCallsEstimate = relayPortsTotal == null ? null : Math.floor(relayPortsTotal / 2);
+
+  return {
+    turnHost,
+    relayPortsTotal,
+    relayPortsUsedEstimate,
+    capacityCallsEstimate,
+    activeCalls,
+  };
+}
+
 function broadcastPresence() {
   const list = Array.from(users.values()).map((u) => ({ id: u.id, name: u.name, busy: Boolean(u.inCallWith) }));
-  const msg = JSON.stringify({ type: 'presence', users: list });
+  const msg = JSON.stringify({ type: 'presence', users: list, voice: getVoiceStats() });
   for (const u of users.values()) {
     if (u.ws.readyState === 1) u.ws.send(msg);
   }
@@ -275,7 +339,7 @@ wss.on('connection', (ws, req) => {
     ? 'TURN is configured for localhost; set LRCOM_TURN_HOST to your public domain/IP for Internet calls.'
     : null;
 
-  send(ws, { type: 'hello', id: userId, turn: turnConfig, https: USE_HTTPS, clientIp, turnWarning });
+  send(ws, { type: 'hello', id: userId, turn: turnConfig, https: USE_HTTPS, clientIp, turnWarning, voice: getVoiceStats() });
 
   ws.on('message', (data) => {
     const now = Date.now();

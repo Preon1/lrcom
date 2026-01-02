@@ -1,8 +1,7 @@
 const qs = (id) => document.getElementById(id);
 
 const setupEl = qs('setup');
-const lobbyEl = qs('lobby');
-const callEl = qs('call');
+const appShellEl = qs('appShell');
 const incomingEl = qs('incoming');
 const chatEl = qs('chat');
 
@@ -10,6 +9,8 @@ const nameInput = qs('name');
 const joinBtn = qs('join');
 const leaveBtn = qs('leave');
 const hangupBtn = qs('hangup');
+const toggleUsersBtn = qs('toggleUsers');
+const sidebarEl = qs('sidebar');
 
 const usersEl = qs('users');
 const meEl = qs('me');
@@ -18,6 +19,8 @@ const peerEl = qs('peer');
 const setupStatus = qs('setupStatus');
 const lobbyStatus = qs('lobbyStatus');
 const callStatus = qs('callStatus');
+const callIdleEl = qs('callIdle');
+const callActiveEl = qs('callActive');
 
 const acceptBtn = qs('accept');
 const rejectBtn = qs('reject');
@@ -31,6 +34,9 @@ const chatSendBtn = qs('chatSend');
 const filterPrivateEl = qs('filterPrivate');
 const filterPublicEl = qs('filterPublic');
 const filterSystemEl = qs('filterSystem');
+
+const themeToggleSetupBtn = qs('themeToggleSetup');
+const themeToggleHeaderBtn = qs('themeToggleHeader');
 
 const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
 const debugPanel = qs('debugPanel');
@@ -49,6 +55,29 @@ function logDebug(...args) {
   }
 }
 
+const THEME_ORDER = ['system', 'light', 'dark'];
+let themeMode = 'system';
+
+function applyTheme(mode) {
+  themeMode = THEME_ORDER.includes(mode) ? mode : 'system';
+  const root = document.documentElement;
+  if (themeMode === 'system') {
+    root.removeAttribute('data-theme');
+  } else {
+    root.setAttribute('data-theme', themeMode);
+  }
+
+  const label = `Theme: ${themeMode[0].toUpperCase()}${themeMode.slice(1)}`;
+  if (themeToggleSetupBtn) themeToggleSetupBtn.textContent = label;
+  if (themeToggleHeaderBtn) themeToggleHeaderBtn.textContent = label;
+}
+
+function cycleTheme() {
+  const i = THEME_ORDER.indexOf(themeMode);
+  const next = THEME_ORDER[(i + 1 + THEME_ORDER.length) % THEME_ORDER.length];
+  applyTheme(next);
+}
+
 let ws;
 let myId = null;
 let myName = null;
@@ -65,12 +94,27 @@ let ringtoneCtx;
 let ringtoneOsc;
 let ringtoneGain;
 
+function isMobileLayout() {
+  return window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+}
+
+function setUsersOpen(open) {
+  if (!appShellEl) return;
+  appShellEl.classList.toggle('users-open', Boolean(open));
+}
+
+function closeUsersIfMobile() {
+  if (isMobileLayout()) setUsersOpen(false);
+}
+
 function setView(view) {
-  setupEl.classList.toggle('hidden', view !== 'setup');
-  lobbyEl.classList.toggle('hidden', view !== 'lobby');
-  callEl.classList.toggle('hidden', view !== 'call');
-  // Chat is visible whenever you're joined (lobby or call)
-  chatEl.classList.toggle('hidden', view === 'setup');
+  // New layout: only two main views.
+  const joined = view !== 'setup';
+  setupEl.classList.toggle('hidden', joined);
+  appShellEl.classList.toggle('hidden', !joined);
+  chatEl.classList.toggle('hidden', !joined);
+
+  if (!joined) setUsersOpen(false);
 }
 
 function showIncoming(show) {
@@ -176,12 +220,17 @@ function renderUsers(users) {
         chatInput.focus();
         chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
       }
+
+      closeUsersIfMobile();
     });
 
     const callBtn = document.createElement('button');
     callBtn.textContent = 'Call';
     callBtn.disabled = Boolean(u.busy) || Boolean(currentPeer);
-    callBtn.addEventListener('click', () => startCall(u.id, u.name));
+    callBtn.addEventListener('click', () => {
+      closeUsersIfMobile();
+      startCall(u.id, u.name);
+    });
 
     actions.appendChild(messageBtn);
     actions.appendChild(callBtn);
@@ -210,6 +259,9 @@ function resetCallState() {
   setText(peerEl, '');
   setText(callStatus, '');
   remoteAudio.srcObject = null;
+
+  callActiveEl?.classList.add('hidden');
+  callIdleEl?.classList.remove('hidden');
 
   try {
     pc?.close();
@@ -395,8 +447,10 @@ async function onCallAccepted(byId, byName) {
   currentPeer = byId;
   setText(peerEl, byName);
   setText(callStatus, 'Connecting…');
-  setView('call');
   setText(lobbyStatus, '');
+
+  callIdleEl?.classList.add('hidden');
+  callActiveEl?.classList.remove('hidden');
 
   await createPeerConnection();
 
@@ -422,7 +476,9 @@ async function acceptIncoming() {
 
   setText(peerEl, callerNameEl.textContent);
   setText(callStatus, 'Connecting…');
-  setView('call');
+
+  callIdleEl?.classList.add('hidden');
+  callActiveEl?.classList.remove('hidden');
 
   send({ type: 'callAccept', from: pendingIncomingFrom });
 }
@@ -438,12 +494,13 @@ function rejectIncoming() {
 function hangup() {
   send({ type: 'callHangup' });
   resetCallState();
-  setView('lobby');
 }
 
 function leave() {
   try { ws?.close(); } catch { /* ignore */ }
   ws = null;
+
+  setUsersOpen(false);
 
   resetCallState();
   clearChat();
@@ -561,14 +618,12 @@ joinBtn.addEventListener('click', async () => {
     if (msg.type === 'callRejected') {
       setText(lobbyStatus, 'Call rejected.');
       resetCallState();
-      setView('lobby');
       return;
     }
 
     if (msg.type === 'callEnded') {
       setText(lobbyStatus, 'Call ended.');
       resetCallState();
-      setView('lobby');
       return;
     }
 
@@ -619,6 +674,22 @@ joinBtn.addEventListener('click', async () => {
   });
 });
 
+toggleUsersBtn?.addEventListener('click', () => {
+  setUsersOpen(!appShellEl.classList.contains('users-open'));
+});
+
+document.addEventListener('click', (e) => {
+  if (!isMobileLayout()) return;
+  if (!appShellEl.classList.contains('users-open')) return;
+
+  const t = e.target;
+  if (!(t instanceof Node)) return;
+  if (sidebarEl?.contains(t)) return;
+  if (toggleUsersBtn?.contains(t)) return;
+
+  setUsersOpen(false);
+});
+
 leaveBtn.addEventListener('click', leave);
 hangupBtn.addEventListener('click', hangup);
 
@@ -640,6 +711,11 @@ filterPublicEl?.addEventListener('change', applyChatFilter);
 filterSystemEl?.addEventListener('change', applyChatFilter);
 
 setView('setup');
+
+applyTheme('system');
+
+themeToggleSetupBtn?.addEventListener('click', cycleTheme);
+themeToggleHeaderBtn?.addEventListener('click', cycleTheme);
 
 if (debugEnabled && debugPanel) {
   debugPanel.classList.remove('hidden');

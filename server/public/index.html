@@ -7,76 +7,93 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="container">
-      <h1>LRcom</h1>
+    <main>
+      <section id="setup" class="setup">
+        <div class="setup-card">
+          <h1>LRcom</h1>
+          <p class="muted">This app is ephemeral: no accounts, no cookies, no saved sessions.</p>
 
-      <section id="setup" class="card">
-        <p class="muted">
-          This app is ephemeral: no accounts, no cookies, no saved sessions.
-        </p>
-
-        <div class="row">
-          <label for="name">Your name</label>
-          <input id="name" maxlength="32" autocomplete="off" inputmode="text" placeholder="e.g. Alex" />
-        </div>
-
-        <div class="row">
-          <button id="join">Join</button>
-          <span id="setupStatus" class="status"></span>
-        </div>
-
-        <p class="hint">
-          Microphone permission will be requested after you join.
-        </p>
-      </section>
-
-      <section id="lobby" class="card hidden">
-        <div class="row between">
-          <div>
-            <div class="muted">You are</div>
-            <div id="me" class="me"></div>
+          <div class="row">
+            <button id="themeToggleSetup" class="secondary" type="button" aria-label="Toggle theme">Theme: System</button>
           </div>
-          <button id="leave" class="secondary">Leave</button>
-        </div>
 
-        <h2>Online</h2>
-        <ul id="users" class="users"></ul>
-        <div id="lobbyStatus" class="status"></div>
-      </section>
-
-      <section id="chat" class="card hidden">
-        <h2>Chat</h2>
-        <div class="chat-filters">
-          <label class="chat-filter"><input id="filterPrivate" type="checkbox" checked /> Private</label>
-          <label class="chat-filter"><input id="filterPublic" type="checkbox" checked /> Public</label>
-          <label class="chat-filter"><input id="filterSystem" type="checkbox" checked /> System</label>
-        </div>
-        <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
-        <div class="row">
-          <input id="chatInput" maxlength="500" autocomplete="off" inputmode="text" placeholder="Type a message…" />
-          <button id="chatSend">Send</button>
-        </div>
-        <div class="muted">Messages are not saved; they exist only while you’re connected.</div>
-      </section>
-
-      <section id="call" class="card hidden">
-        <div class="row between">
-          <div>
-            <div class="muted">In call with</div>
-            <div id="peer" class="me"></div>
+          <div class="row">
+            <label for="name">Your name</label>
+            <input id="name" maxlength="32" autocomplete="off" inputmode="text" placeholder="e.g. Alex" />
           </div>
-          <button id="hangup" class="danger">Hang up</button>
-        </div>
 
-        <audio id="remoteAudio" autoplay></audio>
-        <div id="callStatus" class="status"></div>
+          <div class="row">
+            <button id="join" type="button">Join</button>
+            <span id="setupStatus" class="status"></span>
+          </div>
+
+          <p class="hint">Microphone permission will be requested after you join.</p>
+        </div>
       </section>
 
-      <section id="debugPanel" class="card hidden">
-        <details open>
-          <summary>Debug</summary>
-          <pre id="debugLog" class="debug"></pre>
-        </details>
+      <section id="appShell" class="app hidden">
+        <header class="header">
+          <div class="header-left">
+            <button id="toggleUsers" class="secondary mobile-only" type="button">Users</button>
+            <div class="brand">LRcom</div>
+          </div>
+
+          <div class="header-center">
+            <div id="callIdle" class="muted">Not in call</div>
+            <div id="callActive" class="call-active hidden">
+              <div class="call-peer">
+                <div class="muted">In call with</div>
+                <div id="peer" class="me"></div>
+              </div>
+              <button id="hangup" class="danger" type="button">Hang up</button>
+            </div>
+            <audio id="remoteAudio" autoplay></audio>
+            <div id="callStatus" class="status"></div>
+          </div>
+
+          <div class="header-right">
+            <div class="who">
+              <span class="muted">You:</span>
+              <span id="me" class="who-name"></span>
+            </div>
+            <button id="themeToggleHeader" class="secondary" type="button" aria-label="Toggle theme">Theme: System</button>
+            <button id="leave" class="secondary" type="button">Logout</button>
+          </div>
+        </header>
+
+        <div class="content">
+          <aside id="sidebar" class="sidebar">
+            <div class="sidebar-title">Online</div>
+            <ul id="users" class="users"></ul>
+            <div id="lobbyStatus" class="status"></div>
+          </aside>
+
+          <section id="chat" class="chat">
+            <div class="chat-header">
+              <div class="chat-filters">
+                <label class="chat-filter"><input id="filterPrivate" type="checkbox" checked /> Private</label>
+                <label class="chat-filter"><input id="filterPublic" type="checkbox" checked /> Public</label>
+                <label class="chat-filter"><input id="filterSystem" type="checkbox" checked /> System</label>
+              </div>
+            </div>
+
+            <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+
+            <div class="chat-input">
+              <input id="chatInput" maxlength="500" autocomplete="off" inputmode="text" placeholder="Type a message..." />
+              <button id="chatSend" type="button">Send</button>
+            </div>
+
+            <div class="muted">Messages are not saved; they exist only while you’re connected.</div>
+
+            <section id="debugPanel" class="card hidden">
+              <details open>
+                <summary>Debug</summary>
+                <pre id="debugLog" class="debug"></pre>
+              </details>
+            </section>
+          </section>
+        </div>
       </section>
 
       <div id="incoming" class="incoming hidden" role="dialog" aria-modal="true">
@@ -84,8 +101,8 @@
           <div class="incoming-title">Incoming call</div>
           <div id="callerName" class="incoming-name"></div>
           <div class="row">
-            <button id="accept">Accept</button>
-            <button id="reject" class="secondary">Reject</button>
+            <button id="accept" type="button">Accept</button>
+            <button id="reject" class="secondary" type="button">Reject</button>
           </div>
         </div>
       </div>

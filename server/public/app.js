@@ -21,13 +21,13 @@ const lobbyStatus = qs('lobbyStatus');
 const callStatus = qs('callStatus');
 const callIdleEl = qs('callIdle');
 const callActiveEl = qs('callActive');
-const voiceInfoEl = qs('voiceInfo');
+const techInfoEl = qs('techInfo');
 
 const acceptBtn = qs('accept');
 const rejectBtn = qs('reject');
 const callerNameEl = qs('callerName');
 
-const remoteAudio = qs('remoteAudio');
+const remoteAudiosEl = qs('remoteAudios');
 
 const chatMessagesEl = qs('chatMessages');
 const chatInput = qs('chatInput');
@@ -82,10 +82,15 @@ function cycleTheme() {
 let ws;
 let myId = null;
 let myName = null;
-let currentPeer = null;
+let roomId = null;
 let pendingIncomingFrom = null;
+let pendingIncomingRoomId = null;
 
-let pc;
+/** @type {Map<string, RTCPeerConnection>} */
+const pcs = new Map();
+/** @type {Map<string, string>} */
+const peerNames = new Map();
+
 let localStream;
 let iceConfig;
 
@@ -126,10 +131,10 @@ function setText(el, text) {
   el.textContent = text ?? '';
 }
 
-function renderVoiceInfo(voice) {
-  if (!voiceInfoEl) return;
+function renderTechInfo(voice) {
+  if (!techInfoEl) return;
   if (!voice || (!voice.turnHost && voice.relayPortsTotal == null)) {
-    setText(voiceInfoEl, '');
+    setText(techInfoEl, '');
     return;
   }
 
@@ -144,11 +149,13 @@ function renderVoiceInfo(voice) {
     parts.push(`UDP relay ports in use ~${voice.relayPortsUsedEstimate}`);
   }
 
-  if (typeof voice.capacityCallsEstimate === 'number') {
-    parts.push(`est capacity ~${voice.capacityCallsEstimate} calls`);
+  if (typeof voice.maxConferenceUsersEstimate === 'number') {
+    parts.push(`est conf max ~${voice.maxConferenceUsersEstimate} users`);
+  } else if (typeof voice.capacityCallsEstimate === 'number') {
+    parts.push(`est 1:1 max ~${voice.capacityCallsEstimate} calls`);
   }
 
-  setText(voiceInfoEl, parts.join(' • '));
+  setText(techInfoEl, parts.join(' • '));
 }
 
 function wsUrl() {
@@ -279,25 +286,68 @@ function parseCandidateType(candidateStr) {
   return (m?.[1] ?? 'unknown').toLowerCase();
 }
 
-function resetCallState() {
-  currentPeer = null;
-  pendingIncomingFrom = null;
-  setText(peerEl, '');
-  setText(callStatus, '');
-  remoteAudio.srcObject = null;
+function peerListText() {
+  const names = Array.from(peerNames.entries())
+    .filter(([id]) => id !== myId)
+    .map(([, name]) => name)
+    .filter(Boolean);
+  if (names.length === 0) return '';
+  return names.join(', ');
+}
 
-  callActiveEl?.classList.add('hidden');
-  callIdleEl?.classList.remove('hidden');
+function ensureRemoteAudioEl(peerId) {
+  if (!remoteAudiosEl) return null;
+  const existing = remoteAudiosEl.querySelector(`audio[data-peer-id="${peerId}"]`);
+  if (existing) return existing;
 
-  try {
-    pc?.close();
-  } catch {
-    // ignore
+  const a = document.createElement('audio');
+  a.autoplay = true;
+  a.dataset.peerId = peerId;
+  remoteAudiosEl.appendChild(a);
+  return a;
+}
+
+function removeRemoteAudioEl(peerId) {
+  if (!remoteAudiosEl) return;
+  const a = remoteAudiosEl.querySelector(`audio[data-peer-id="${peerId}"]`);
+  if (a) a.remove();
+}
+
+function updateCallHeader() {
+  const peersText = peerListText();
+  setText(peerEl, peersText);
+  if (roomId && peerNames.size > 0) {
+    callIdleEl?.classList.add('hidden');
+    callActiveEl?.classList.remove('hidden');
+  } else {
+    callActiveEl?.classList.add('hidden');
+    callIdleEl?.classList.remove('hidden');
   }
-  pc = null;
+}
 
+function closePeerConnection(peerId) {
+  const pc = pcs.get(peerId);
+  if (!pc) return;
+  try { pc.close(); } catch { /* ignore */ }
+  pcs.delete(peerId);
+  peerNames.delete(peerId);
+  removeRemoteAudioEl(peerId);
+}
+
+function resetRoomState() {
+  roomId = null;
+  pendingIncomingFrom = null;
+  pendingIncomingRoomId = null;
+  for (const peerId of Array.from(pcs.keys())) closePeerConnection(peerId);
+  peerNames.clear();
+  setText(callStatus, '');
+  updateCallHeader();
   stopRingtone();
   showIncoming(false);
+}
+
+function resetCallState() {
+  resetRoomState();
 }
 
 function clearChat() {
@@ -371,31 +421,35 @@ function sendChat() {
   if (chatInput) chatInput.value = '';
 }
 
-async function createPeerConnection() {
-  pc = new RTCPeerConnection(iceConfig ?? undefined);
+async function ensurePeerConnection(peerId) {
+  if (pcs.has(peerId)) return pcs.get(peerId);
+
+  const pc = new RTCPeerConnection(iceConfig ?? undefined);
+  pcs.set(peerId, pc);
 
   logDebug('RTCPeerConnection created', {
+    peerId,
     iceServers: (iceConfig?.iceServers ?? []).map((s) => ({ urls: s.urls })),
   });
 
   pc.onicegatheringstatechange = () => {
-    logDebug('iceGatheringState', pc.iceGatheringState);
+    logDebug('iceGatheringState', peerId, pc.iceGatheringState);
   };
 
   pc.oniceconnectionstatechange = () => {
-    logDebug('iceConnectionState', pc.iceConnectionState);
+    logDebug('iceConnectionState', peerId, pc.iceConnectionState);
   };
 
   pc.onconnectionstatechange = () => {
-    logDebug('connectionState', pc.connectionState);
+    logDebug('connectionState', peerId, pc.connectionState);
   };
 
   pc.onsignalingstatechange = () => {
-    logDebug('signalingState', pc.signalingState);
+    logDebug('signalingState', peerId, pc.signalingState);
   };
 
   pc.onicecandidateerror = (ev) => {
-    logDebug('iceCandidateError', {
+    logDebug('iceCandidateError', peerId, {
       errorCode: ev.errorCode,
       errorText: ev.errorText,
       url: ev.url,
@@ -405,14 +459,15 @@ async function createPeerConnection() {
   };
 
   pc.onicecandidate = (ev) => {
-    if (ev.candidate && currentPeer) {
-      logDebug('local ICE candidate', parseCandidateType(ev.candidate.candidate));
-      send({ type: 'signal', to: currentPeer, payload: { kind: 'ice', candidate: ev.candidate } });
+    if (ev.candidate) {
+      logDebug('local ICE candidate', peerId, parseCandidateType(ev.candidate.candidate));
+      send({ type: 'signal', to: peerId, payload: { kind: 'ice', candidate: ev.candidate } });
     }
   };
 
   pc.ontrack = (ev) => {
-    remoteAudio.srcObject = ev.streams[0];
+    const a = ensureRemoteAudioEl(peerId);
+    if (a) a.srcObject = ev.streams[0];
   };
 
   const stream = await ensureMic();
@@ -420,74 +475,35 @@ async function createPeerConnection() {
     pc.addTrack(track, stream);
   }
 
-  // Periodically dump selected ICE candidate pair once connected
-  const interval = setInterval(async () => {
-    if (!pc) return;
-    if (!['connected', 'completed'].includes(pc.iceConnectionState)) return;
-
-    try {
-      const stats = await pc.getStats();
-      let selectedPair;
-      let local;
-      let remote;
-
-      stats.forEach((r) => {
-        if (r.type === 'transport' && r.selectedCandidatePairId) {
-          selectedPair = stats.get(r.selectedCandidatePairId);
-        }
-      });
-
-      if (selectedPair) {
-        local = stats.get(selectedPair.localCandidateId);
-        remote = stats.get(selectedPair.remoteCandidateId);
-        logDebug('selectedCandidatePair', {
-          localType: local?.candidateType,
-          localIp: local?.ip,
-          localPort: local?.port,
-          remoteType: remote?.candidateType,
-          remoteIp: remote?.ip,
-          remotePort: remote?.port,
-          nominated: selectedPair?.nominated,
-          state: selectedPair?.state,
-        });
-      }
-    } catch {
-      // ignore
-    }
-  }, 5000);
-
   pc.addEventListener('connectionstatechange', () => {
-    if (!pc || pc.connectionState === 'closed' || pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-      clearInterval(interval);
+    if (!pcs.has(peerId)) return;
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      closePeerConnection(peerId);
+      updateCallHeader();
     }
   });
+
+  return pc;
 }
 
 async function startCall(peerId, peerName) {
-  setText(lobbyStatus, 'Calling…');
+  setText(lobbyStatus, roomId ? 'Inviting…' : 'Calling…');
+  peerNames.set(peerId, peerName);
+  updateCallHeader();
   send({ type: 'callStart', to: peerId });
-  // Wait for callAccepted before creating offer
-}
-
-async function onCallAccepted(byId, byName) {
-  currentPeer = byId;
-  setText(peerEl, byName);
-  setText(callStatus, 'Connecting…');
-  setText(lobbyStatus, '');
-
-  callIdleEl?.classList.add('hidden');
-  callActiveEl?.classList.remove('hidden');
-
-  await createPeerConnection();
-
-  const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
-  await pc.setLocalDescription(offer);
-
-  send({ type: 'signal', to: currentPeer, payload: { kind: 'offer', sdp: offer } });
 }
 
 async function onIncomingCall(from, fromName) {
   pendingIncomingFrom = from;
+  pendingIncomingRoomId = null;
+  setText(callerNameEl, fromName);
+  showIncoming(true);
+  startRingtone();
+}
+
+async function onIncomingCallRoom(from, fromName, incomingRoomId) {
+  pendingIncomingFrom = from;
+  pendingIncomingRoomId = incomingRoomId;
   setText(callerNameEl, fromName);
   showIncoming(true);
   startRingtone();
@@ -498,23 +514,18 @@ async function acceptIncoming() {
   showIncoming(false);
 
   if (!pendingIncomingFrom) return;
-  currentPeer = pendingIncomingFrom;
-
-  setText(peerEl, callerNameEl.textContent);
   setText(callStatus, 'Connecting…');
+  updateCallHeader();
 
-  callIdleEl?.classList.add('hidden');
-  callActiveEl?.classList.remove('hidden');
-
-  send({ type: 'callAccept', from: pendingIncomingFrom });
+  send({ type: 'callAccept', from: pendingIncomingFrom, roomId: pendingIncomingRoomId });
 }
 
 function rejectIncoming() {
   stopRingtone();
   showIncoming(false);
-  if (pendingIncomingFrom) send({ type: 'callReject', from: pendingIncomingFrom });
+  if (pendingIncomingFrom) send({ type: 'callReject', from: pendingIncomingFrom, roomId: pendingIncomingRoomId });
   pendingIncomingFrom = null;
-  currentPeer = null;
+  pendingIncomingRoomId = null;
 }
 
 function hangup() {
@@ -542,7 +553,7 @@ function leave() {
   setText(setupStatus, '');
   setText(lobbyStatus, '');
   setText(callStatus, '');
-  setText(voiceInfoEl, '');
+  setText(techInfoEl, '');
   setView('setup');
 }
 
@@ -571,7 +582,7 @@ joinBtn.addEventListener('click', async () => {
       myId = msg.id;
       iceConfig = msg.turn;
 
-      renderVoiceInfo(msg.voice);
+      renderTechInfo(msg.voice);
 
       if (msg.turnWarning) {
         logDebug('TURN warning', msg.turnWarning);
@@ -607,7 +618,7 @@ joinBtn.addEventListener('click', async () => {
 
     if (msg.type === 'presence') {
       renderUsers(msg.users ?? []);
-      renderVoiceInfo(msg.voice);
+      renderTechInfo(msg.voice);
       return;
     }
 
@@ -625,8 +636,12 @@ joinBtn.addEventListener('click', async () => {
     }
 
     if (msg.type === 'incomingCall') {
-      logDebug('incomingCall', { from: msg.from, fromName: msg.fromName });
-      await onIncomingCall(msg.from, msg.fromName);
+      logDebug('incomingCall', { from: msg.from, fromName: msg.fromName, roomId: msg.roomId });
+      if (msg.roomId) {
+        await onIncomingCallRoom(msg.from, msg.fromName, msg.roomId);
+      } else {
+        await onIncomingCall(msg.from, msg.fromName);
+      }
       return;
     }
 
@@ -639,15 +654,10 @@ joinBtn.addEventListener('click', async () => {
       return;
     }
 
-    if (msg.type === 'callAccepted') {
-      logDebug('callAccepted', { by: msg.by, byName: msg.byName });
-      await onCallAccepted(msg.by, msg.byName);
-      return;
-    }
-
     if (msg.type === 'callRejected') {
       setText(lobbyStatus, 'Call rejected.');
-      resetCallState();
+      // If we were not in a room yet, reset call state.
+      if (!roomId) resetCallState();
       return;
     }
 
@@ -657,24 +667,73 @@ joinBtn.addEventListener('click', async () => {
       return;
     }
 
+    if (msg.type === 'roomPeers') {
+      // You joined a room; peers list are existing members.
+      roomId = msg.roomId ?? roomId;
+      for (const p of (msg.peers ?? [])) {
+        if (!p?.id || p.id === myId) continue;
+        peerNames.set(p.id, p.name ?? '');
+        await ensurePeerConnection(p.id);
+      }
+      setText(lobbyStatus, '');
+      setText(callStatus, 'Connecting…');
+      updateCallHeader();
+      return;
+    }
+
+    if (msg.type === 'roomPeerJoined') {
+      roomId = msg.roomId ?? roomId;
+      const p = msg.peer;
+      if (!p?.id || p.id === myId) return;
+      peerNames.set(p.id, p.name ?? '');
+      updateCallHeader();
+
+      // Existing members create offers to the new peer.
+      const pc = await ensurePeerConnection(p.id);
+      setText(callStatus, 'Connecting…');
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
+      await pc.setLocalDescription(offer);
+      send({ type: 'signal', to: p.id, payload: { kind: 'offer', sdp: offer } });
+      return;
+    }
+
+    if (msg.type === 'roomPeerLeft') {
+      const peerId = msg.peerId;
+      if (peerId) closePeerConnection(peerId);
+      updateCallHeader();
+
+      // If we are now alone, end call.
+      if (peerNames.size === 0) {
+        resetCallState();
+      }
+      return;
+    }
+
     if (msg.type === 'signal') {
       const payload = msg.payload;
       if (!payload || !payload.kind) return;
 
       logDebug('signal', { kind: payload.kind, from: msg.from, fromName: msg.fromName });
 
+      const fromId = msg.from;
+      if (fromId && msg.fromName) peerNames.set(fromId, msg.fromName);
+
       if (payload.kind === 'offer') {
-        if (!currentPeer) currentPeer = msg.from;
-        if (!pc) await createPeerConnection();
+        const peerId = msg.from;
+        if (!peerId) return;
+        const pc = await ensurePeerConnection(peerId);
 
         await pc.setRemoteDescription(payload.sdp);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        send({ type: 'signal', to: currentPeer, payload: { kind: 'answer', sdp: answer } });
+        send({ type: 'signal', to: peerId, payload: { kind: 'answer', sdp: answer } });
         return;
       }
 
       if (payload.kind === 'answer') {
+        const peerId = msg.from;
+        if (!peerId) return;
+        const pc = pcs.get(peerId);
         if (!pc) return;
         await pc.setRemoteDescription(payload.sdp);
         setText(callStatus, 'Connected');
@@ -682,8 +741,11 @@ joinBtn.addEventListener('click', async () => {
       }
 
       if (payload.kind === 'ice') {
+        const peerId = msg.from;
+        if (!peerId) return;
+        const pc = pcs.get(peerId);
         if (!pc) return;
-        logDebug('remote ICE candidate', parseCandidateType(payload.candidate?.candidate));
+        logDebug('remote ICE candidate', peerId, parseCandidateType(payload.candidate?.candidate));
         try {
           await pc.addIceCandidate(payload.candidate);
         } catch {

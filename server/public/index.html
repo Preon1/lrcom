@@ -47,9 +47,8 @@
               </div>
               <button id="hangup" class="danger" type="button">Hang up</button>
             </div>
-            <audio id="remoteAudio" autoplay></audio>
+            <div id="remoteAudios"></div>
             <div id="callStatus" class="status"></div>
-            <div id="voiceInfo" class="muted"></div>
           </div>
 
           <div class="header-right">
@@ -66,7 +65,10 @@
           <aside id="sidebar" class="sidebar">
             <div class="sidebar-title">Online</div>
             <ul id="users" class="users"></ul>
-            <div id="lobbyStatus" class="status"></div>
+            <div class="sidebar-footer">
+              <div id="lobbyStatus" class="status"></div>
+              <div id="techInfo" class="muted"></div>
+            </div>
           </aside>
 
           <section id="chat" class="chat">

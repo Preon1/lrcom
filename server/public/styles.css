@@ -135,6 +135,9 @@ button.danger {
   list-style: none;
   padding: 0;
   margin: 12px 0 0;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .users li {
@@ -327,7 +330,15 @@ button.danger {
   background: var(--card-bg);
   border-right: 1px solid var(--border);
   padding: 12px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 .sidebar-title {

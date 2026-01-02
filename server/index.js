@@ -134,10 +134,15 @@ const wss = new WebSocketServer({ server });
 
 /**
  * Ephemeral state only (memory); no persistence.
- * users: id -> { id, name, ws, lastMsgAt, inCallWith }
+ * users: id -> { id, name, ws, lastMsgAt, roomId }
  */
 const users = new Map();
 const nameToId = new Map();
+
+/**
+ * rooms: roomId -> { id, members:Set<string> }
+ */
+const rooms = new Map();
 
 function getTurnHostLabel() {
   // Best-effort parse from the first TURN url: turn:host:port?transport=...
@@ -151,20 +156,22 @@ function getTurnHostLabel() {
 }
 
 function getActiveCallCount() {
-  // Each established/ringing call sets inCallWith on both ends.
-  // Count unique pairs by stable ordering.
-  const seen = new Set();
+  // Room with 2+ members counts as an active call.
   let calls = 0;
-  for (const u of users.values()) {
-    if (!u.inCallWith) continue;
-    const a = u.id;
-    const b = u.inCallWith;
-    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    calls++;
+  for (const r of rooms.values()) {
+    if ((r.members?.size ?? 0) >= 2) calls++;
   }
   return calls;
+}
+
+function getPeerLinksEstimate() {
+  // Mesh conference: number of peer connections ~= sum over rooms of k choose 2.
+  let links = 0;
+  for (const r of rooms.values()) {
+    const k = r.members?.size ?? 0;
+    if (k >= 2) links += (k * (k - 1)) / 2;
+  }
+  return links;
 }
 
 function getVoiceStats() {
@@ -181,30 +188,78 @@ function getVoiceStats() {
 
   const activeCalls = getActiveCallCount();
 
-  // Estimation:
-  // - WebRTC audio typically uses rtcp-mux (single component) => ~1 UDP relay port per client allocation.
-  // - A call has 2 clients => ~2 relay ports in use (worst-case if both sides relay).
-  const relayPortsUsedEstimateRaw = activeCalls * 2;
+  // Estimation (worst-case): mesh conference
+  // - each peer link is one RTCPeerConnection between two participants
+  // - if both sides relay, that's ~2 relay allocations (ports)
+  const peerLinks = getPeerLinksEstimate();
+  const relayPortsUsedEstimateRaw = Math.floor(peerLinks * 2);
   const relayPortsUsedEstimate = relayPortsTotal == null
     ? relayPortsUsedEstimateRaw
     : Math.min(relayPortsUsedEstimateRaw, relayPortsTotal);
 
+  // Keep this as a simple reference number: max 2-party calls if every participant needs relay.
   const capacityCallsEstimate = relayPortsTotal == null ? null : Math.floor(relayPortsTotal / 2);
+
+  // Estimate max conference users (mesh) under worst-case relaying:
+  // linkBudget = floor(relayPortsTotal / 2) because ~2 relay ports per peer-link
+  // find max k such that k*(k-1)/2 <= linkBudget
+  let maxConferenceUsersEstimate = null;
+  if (typeof relayPortsTotal === 'number') {
+    const linkBudget = Math.floor(relayPortsTotal / 2);
+    const disc = 1 + 8 * linkBudget;
+    maxConferenceUsersEstimate = Math.floor((1 + Math.sqrt(disc)) / 2);
+  }
 
   return {
     turnHost,
     relayPortsTotal,
     relayPortsUsedEstimate,
     capacityCallsEstimate,
+    maxConferenceUsersEstimate,
     activeCalls,
   };
 }
 
 function broadcastPresence() {
-  const list = Array.from(users.values()).map((u) => ({ id: u.id, name: u.name, busy: Boolean(u.inCallWith) }));
+  const list = Array.from(users.values()).map((u) => ({ id: u.id, name: u.name, busy: Boolean(u.roomId) }));
   const msg = JSON.stringify({ type: 'presence', users: list, voice: getVoiceStats() });
   for (const u of users.values()) {
     if (u.ws.readyState === 1) u.ws.send(msg);
+  }
+}
+
+function getRoom(roomId) {
+  return roomId ? rooms.get(roomId) : null;
+}
+
+function ensureRoom(roomId) {
+  if (!rooms.has(roomId)) rooms.set(roomId, { id: roomId, members: new Set() });
+  return rooms.get(roomId);
+}
+
+function leaveRoom(user) {
+  const rid = user.roomId;
+  if (!rid) return;
+  const room = rooms.get(rid);
+  user.roomId = null;
+  if (!room) return;
+  room.members.delete(user.id);
+  for (const memberId of room.members) {
+    const m = users.get(memberId);
+    if (!m) continue;
+    send(m.ws, { type: 'roomPeerLeft', roomId: rid, peerId: user.id });
+  }
+  if (room.members.size <= 1) {
+    // If one user remains, end the room for them.
+    const lastId = Array.from(room.members)[0];
+    if (lastId) {
+      const last = users.get(lastId);
+      if (last) {
+        last.roomId = null;
+        send(last.ws, { type: 'callEnded', reason: 'alone' });
+      }
+    }
+    rooms.delete(rid);
   }
 }
 
@@ -295,13 +350,9 @@ function closeUser(userId) {
 
   const name = u.name;
 
-  // If in call, notify peer
-  if (u.inCallWith) {
-    const peer = users.get(u.inCallWith);
-    if (peer) {
-      peer.inCallWith = null;
-      send(peer.ws, { type: 'callEnded', reason: 'peer_left' });
-    }
+  // If in room, leave room and notify others
+  if (u.roomId) {
+    leaveRoom(u);
   }
 
   users.delete(userId);
@@ -326,7 +377,7 @@ function rateLimit(user, nowMs) {
 
 wss.on('connection', (ws, req) => {
   const userId = makeId();
-  const user = { id: userId, name: null, ws, lastMsgAt: Date.now(), inCallWith: null, _rl: null };
+  const user = { id: userId, name: null, ws, lastMsgAt: Date.now(), roomId: null, _rl: null };
   users.set(userId, user);
 
   const clientIp = req?.socket?.remoteAddress ?? null;
@@ -406,16 +457,21 @@ wss.on('connection', (ws, req) => {
         send(ws, { type: 'callStartResult', ok: false, reason: 'not_ready' });
         return;
       }
-      if (user.inCallWith || callee.inCallWith) {
+      if (callee.roomId) {
         send(ws, { type: 'callStartResult', ok: false, reason: 'busy' });
         return;
       }
 
-      // Mark "ringing" as busy on both ends to avoid race calls.
-      user.inCallWith = callee.id;
-      callee.inCallWith = user.id;
+      // New room or invite into existing room
+      const rid = user.roomId ?? makeId();
+      const room = ensureRoom(rid);
+      room.members.add(user.id);
+      room.members.add(callee.id);
 
-      send(callee.ws, { type: 'incomingCall', from: user.id, fromName: user.name });
+      user.roomId = rid;
+      callee.roomId = rid;
+
+      send(callee.ws, { type: 'incomingCall', from: user.id, fromName: user.name, roomId: rid });
       send(ws, { type: 'callStartResult', ok: true });
       broadcastPresence();
       return;
@@ -423,12 +479,16 @@ wss.on('connection', (ws, req) => {
 
     if (msg.type === 'callReject') {
       const from = typeof msg.from === 'string' ? msg.from : null;
+      const rid = typeof msg.roomId === 'string' ? msg.roomId : user.roomId;
       const caller = from ? users.get(from) : null;
-      if (caller) {
-        caller.inCallWith = null;
-        send(caller.ws, { type: 'callRejected', reason: 'rejected' });
+      if (caller) send(caller.ws, { type: 'callRejected', reason: 'rejected' });
+
+      // Remove rejecter from the room; if room collapses, last member gets callEnded.
+      if (rid && user.roomId === rid) {
+        leaveRoom(user);
+      } else {
+        user.roomId = null;
       }
-      user.inCallWith = null;
       broadcastPresence();
       return;
     }
@@ -436,13 +496,46 @@ wss.on('connection', (ws, req) => {
     if (msg.type === 'callAccept') {
       const from = typeof msg.from === 'string' ? msg.from : null;
       const caller = from ? users.get(from) : null;
+      const rid = typeof msg.roomId === 'string' ? msg.roomId : user.roomId;
       if (!caller) {
-        user.inCallWith = null;
+        user.roomId = null;
         broadcastPresence();
         return;
       }
-      // Keep inCallWith as set; caller will create offer.
-      send(caller.ws, { type: 'callAccepted', by: userId, byName: user.name });
+
+      if (!rid || caller.roomId !== rid || user.roomId !== rid) {
+        user.roomId = null;
+        broadcastPresence();
+        return;
+      }
+
+      const room = getRoom(rid);
+      if (!room) {
+        user.roomId = null;
+        broadcastPresence();
+        return;
+      }
+
+      // Notify existing members to connect to the new joiner
+      const peer = { id: user.id, name: user.name };
+      for (const memberId of room.members) {
+        if (memberId === user.id) continue;
+        const m = users.get(memberId);
+        if (!m) continue;
+        send(m.ws, { type: 'roomPeerJoined', roomId: rid, peer });
+      }
+
+      // Send the joiner a list of existing members to prepare for offers
+      const peers = Array.from(room.members)
+        .filter((id) => id !== user.id)
+        .map((id) => {
+          const u2 = users.get(id);
+          return u2 ? { id: u2.id, name: u2.name } : null;
+        })
+        .filter(Boolean);
+
+      send(user.ws, { type: 'roomPeers', roomId: rid, peers });
+
       return;
     }
 
@@ -451,25 +544,17 @@ wss.on('connection', (ws, req) => {
       const payload = msg.payload;
       if (!to || !users.has(to)) return;
 
-      // Only allow signaling between paired call participants
+      // Only allow signaling between users in the same room
       const peer = users.get(to);
       if (!peer) return;
-      if (user.inCallWith !== peer.id || peer.inCallWith !== user.id) return;
+      if (!user.roomId || user.roomId !== peer.roomId) return;
 
       send(peer.ws, { type: 'signal', from: user.id, fromName: user.name, payload });
       return;
     }
 
     if (msg.type === 'callHangup') {
-      const peerId = user.inCallWith;
-      if (peerId) {
-        const peer = users.get(peerId);
-        if (peer) {
-          peer.inCallWith = null;
-          send(peer.ws, { type: 'callEnded', reason: 'hangup' });
-        }
-      }
-      user.inCallWith = null;
+      leaveRoom(user);
       broadcastPresence();
       return;
     }

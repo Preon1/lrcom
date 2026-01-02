@@ -147,6 +147,12 @@ function makeId() {
   return crypto.randomBytes(12).toString('hex');
 }
 
+function makeMsgId() {
+  // Used for client-side reply references and scroll/flash targeting.
+  // crypto.randomUUID is available on modern Node (incl. Node 20).
+  return crypto.randomUUID();
+}
+
 const server = USE_HTTPS
   ? https.createServer(
       {
@@ -312,8 +318,10 @@ function leaveRoom(user) {
 
 function broadcastChat(fromUser, text) {
   const atIso = new Date().toISOString();
+  const id = makeMsgId();
   const msg = JSON.stringify({
     type: 'chat',
+    id,
     atIso,
     from: fromUser.id,
     fromName: fromUser.name,
@@ -338,8 +346,10 @@ function broadcastChat(fromUser, text) {
 
 function broadcastSystem(text) {
   const atIso = new Date().toISOString();
+  const id = makeMsgId();
   const msg = JSON.stringify({
     type: 'chat',
+    id,
     atIso,
     from: null,
     fromName: 'System',
@@ -355,8 +365,10 @@ function broadcastSystem(text) {
 
 function sendPrivateChat(fromUser, toUser, text) {
   const atIso = new Date().toISOString();
+  const id = makeMsgId();
   const msg = JSON.stringify({
     type: 'chat',
+    id,
     atIso,
     from: fromUser.id,
     fromName: fromUser.name,
@@ -654,7 +666,7 @@ wss.on('connection', (ws, req) => {
 
       // Replies use a reserved prefix that intentionally begins with '@'.
       // Don’t treat it as a private message to user named "reply".
-      const pm = raw.startsWith('@reply [') ? null : parsePrivatePrefix(raw);
+      const pm = (raw.startsWith('@reply ') || raw.startsWith('@reply[')) ? null : parsePrivatePrefix(raw);
       if (pm) {
         const toId = nameToId.get(pm.toName);
         const toUser = toId ? users.get(toId) : null;

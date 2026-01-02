@@ -631,25 +631,33 @@ function formatChatTime(atIso) {
 
 function parseReplyPrefix(text) {
   if (typeof text !== 'string') return null;
-  if (!text.startsWith('@reply [')) return null;
-  const close = text.indexOf(']');
-  if (close === -1) return null;
 
-  const after = text.slice(close + 1);
-  if (!after.startsWith(' \n') && !after.startsWith('\n') && !after.startsWith(' \r\n') && !after.startsWith('\r\n')) return null;
+  // New format (preferred):
+  //   @reply <message-uuid>\n<message body>
+  if (text.startsWith('@reply ')) {
+    const nl = text.indexOf('\n');
+    if (nl === -1) return null;
+    const id = text.slice(7, nl).trim();
+    if (!id) return null;
+    const replyBody = text.slice(nl + 1).replace(/^\r?\n/, '');
+    return { replyToId: id, replyBody };
+  }
 
-  const inside = text.slice(7, close); // after "@reply ["
-  const sep = inside.lastIndexOf(' • ');
-  if (sep === -1) return null;
-  const replyToName = inside.slice(0, sep).trim();
-  const replyToTime = inside.slice(sep + 3).trim();
+  // Legacy format (no longer generated):
+  //   @reply [name • time] \n<body>
+  // We parse it so the banner/body render, but we intentionally do NOT surface
+  // name/time in the UI to avoid leaking data to users without history.
+  if (text.startsWith('@reply [')) {
+    const close = text.indexOf(']');
+    if (close === -1) return null;
+    const after = text.slice(close + 1);
+    if (!after.startsWith(' \n') && !after.startsWith('\n') && !after.startsWith(' \r\n') && !after.startsWith('\r\n')) return null;
+    const bodyStart = text[close + 1] === ' ' ? close + 3 : close + 2;
+    const replyBody = text.slice(bodyStart).replace(/^\r?\n/, '');
+    return { replyToId: null, replyBody };
+  }
 
-  // Skip optional leading space before newline.
-  const bodyStart = text.startsWith('@reply [') && text[close + 1] === ' ' ? close + 3 : close + 2;
-  const replyBody = text.slice(bodyStart).replace(/^\r?\n/, '');
-
-  if (!replyToName || !replyToTime) return null;
-  return { replyToName, replyToTime, replyBody };
+  return null;
 }
 
 function ensureReplyContextMenu() {
@@ -695,8 +703,7 @@ function showReplyContextMenu(x, y, target) {
 
 function triggerReply(target) {
   if (!chatInput) return;
-  const stamp = target.atIso ?? target.time;
-  const prefix = `@reply [${target.fromName} • ${stamp}] \n`;
+  const prefix = target?.msgId ? `@reply ${target.msgId}\n` : '@reply\n';
   chatInput.value = prefix;
   chatInput.focus();
   chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
@@ -711,30 +718,11 @@ function flashChatLine(el) {
   setTimeout(() => el.classList.remove('chat-flash'), 900);
 }
 
-function scrollToReferencedMessage(replyToName, replyToTime) {
+function scrollToReferencedMessageById(replyToId) {
   if (!chatMessagesEl) return;
+  if (!replyToId) return;
   const kids = Array.from(chatMessagesEl.children);
-  const replyLooksIso = typeof replyToTime === 'string' && /\d{4}-\d{2}-\d{2}T/.test(replyToTime);
-  const exact = kids.find((el) => {
-    if (el?.dataset?.fromName !== replyToName) return false;
-    if (replyLooksIso) return el?.dataset?.atIso === replyToTime;
-    return el?.dataset?.time === replyToTime;
-  });
-
-  // Tolerant ISO matching (handles minor formatting differences like missing milliseconds).
-  let match = exact;
-  if (!match && replyLooksIso) {
-    const targetMs = Date.parse(replyToTime);
-    if (!Number.isNaN(targetMs)) {
-      match = kids.find((el) => {
-        if (el?.dataset?.fromName !== replyToName) return false;
-        const ms = Date.parse(el?.dataset?.atIso ?? '');
-        if (Number.isNaN(ms)) return false;
-        return Math.abs(ms - targetMs) <= 1000;
-      });
-    }
-  }
-
+  const match = kids.find((el) => el?.dataset?.msgId === replyToId);
   if (!match) return;
 
   // If filters are hiding the target, auto-enable the relevant filter so scrolling is visible.
@@ -839,7 +827,7 @@ function applyChatFilter() {
   }
 }
 
-function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }) {
+function renderChatMessage({ id, atIso, fromName, text, private: isPrivate, toName }) {
   if (!chatMessagesEl) return;
 
   const time = formatChatTime(atIso);
@@ -853,10 +841,10 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
   line.dataset.fromName = fromName;
   line.dataset.time = time;
   line.dataset.atIso = atIso;
+  if (id) line.dataset.msgId = id;
   if (isReply) {
     line.classList.add('chat-reply');
-    line.dataset.replyToName = reply.replyToName;
-    line.dataset.replyToTime = reply.replyToTime;
+    if (reply.replyToId) line.dataset.replyToId = reply.replyToId;
   }
 
   const swipe = document.createElement('div');
@@ -891,16 +879,23 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
   if (isReply) {
     const banner = document.createElement('div');
     banner.className = 'chat-reply-banner';
-    const replyTimeLabel = /\d{4}-\d{2}-\d{2}T/.test(reply.replyToTime)
-      ? formatChatTime(reply.replyToTime)
-      : reply.replyToTime;
-    banner.textContent = `Reply to ${reply.replyToName} • ${replyTimeLabel}`;
-    banner.style.cursor = 'pointer';
-    banner.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      scrollToReferencedMessage(reply.replyToName, reply.replyToTime);
-    });
+
+    const replyToId = reply.replyToId;
+    const referenced = replyToId ? chatMessages.find((m) => m?.id === replyToId) : null;
+    if (referenced) {
+      const labelTime = formatChatTime(referenced.atIso);
+      banner.textContent = `Reply to ${referenced.fromName} • ${labelTime}`;
+      banner.style.cursor = 'pointer';
+      banner.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        scrollToReferencedMessageById(replyToId);
+      });
+    } else {
+      // Privacy: do not show names/times for missing history.
+      banner.textContent = 'Reply';
+    }
+
     body.textContent = reply.replyBody;
     inner.appendChild(meta);
     inner.appendChild(banner);
@@ -920,12 +915,12 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
     if (isMobileTextEntry()) return;
     if (fromName === 'System') return;
     e.preventDefault();
-    showReplyContextMenu(e.pageX, e.pageY, { fromName, time, atIso });
+    showReplyContextMenu(e.pageX, e.pageY, { msgId: id });
   });
 
   // Mobile: swipe left to reply.
   if (fromName !== 'System') {
-    attachSwipeReply(line, { fromName, time, atIso });
+    attachSwipeReply(line, { msgId: id });
   }
 
   chatMessagesEl.appendChild(line);
@@ -1226,7 +1221,11 @@ async function doJoin() {
     }
 
     if (msg.type === 'chat') {
+      const id = (typeof msg.id === 'string' && msg.id.trim())
+        ? msg.id.trim()
+        : (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(msg.atIso ?? Date.now()));
       const entry = {
+        id,
         atIso: msg.atIso,
         fromName: msg.fromName,
         text: msg.text,

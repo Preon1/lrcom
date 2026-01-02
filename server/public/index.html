@@ -72,9 +72,13 @@
               </div>
               <button id="enableNotifications" class="secondary" type="button">Enable notifications</button>
               <button id="themeToggleHeader" class="secondary" type="button" aria-label="Toggle theme">Theme: System</button>
-              <button id="leave" class="secondary" type="button">Logout</button>
+              <button id="leave" class="secondary icon-only" type="button" aria-label="Logout">
+                <svg class="icon" aria-hidden="true" focusable="false"><use xlink:href="./icons.svg#logout"></use></svg>
+              </button>
             </div>
-            <button id="toggleUsers" class="secondary mobile-only" type="button">Users</button>
+            <button id="toggleUsers" class="secondary mobile-only icon-only" type="button" aria-label="Users">
+              <svg class="icon" aria-hidden="true" focusable="false"><use xlink:href="./icons.svg#users"></use></svg>
+            </button>
           </div>
         </header>
 
@@ -102,7 +106,9 @@
 
             <div class="chat-input">
               <textarea id="chatInput" rows="1" maxlength="500" autocomplete="off" placeholder="Type a message..."></textarea>
-              <button id="chatSend" type="button">Send</button>
+              <button id="chatSend" class="icon-only" type="button" aria-label="Send">
+                <svg class="icon" aria-hidden="true" focusable="false"><use xlink:href="./icons.svg#send"></use></svg>
+              </button>
             </div>
 
             <section id="debugPanel" class="card hidden">

@@ -230,6 +230,26 @@ button {
   color: var(--button-text);
   border-radius: 10px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+button.icon-only {
+  padding: 10px;
+}
+
+button.icon-only .icon {
+  pointer-events: none;
 }
 
 button.secondary {
@@ -663,3 +683,6 @@ button.danger {
   max-height: 240px;
   overflow: auto;
 }
+
+
+

@@ -437,7 +437,9 @@ function renderUsers(users) {
 
     const messageBtn = document.createElement('button');
     messageBtn.className = 'secondary';
-    messageBtn.textContent = 'Message';
+    messageBtn.classList.add('icon-only');
+    messageBtn.setAttribute('aria-label', `Message ${u.name}`);
+    messageBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use xlink:href="./icons.svg#message"></use></svg>';
     messageBtn.addEventListener('click', () => {
       const needsQuotes = /\s/.test(u.name);
       const prefix = needsQuotes ? `@"${u.name}" ` : `@${u.name} `;
@@ -451,7 +453,9 @@ function renderUsers(users) {
     });
 
     const callBtn = document.createElement('button');
-    callBtn.textContent = roomId ? 'Add' : 'Call';
+    callBtn.classList.add('icon-only');
+    callBtn.setAttribute('aria-label', roomId ? `Add ${u.name} to call` : `Call ${u.name}`);
+    callBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use xlink:href="./icons.svg#call"></use></svg>';
     // Disable if the other user is already in a call, or already connected in our room.
     callBtn.disabled = Boolean(u.busy) || (roomId && peerNames.has(u.id));
     callBtn.addEventListener('click', () => {

@@ -442,6 +442,61 @@ button.danger {
   padding: 16px;
 }
 
+.text-link {
+  background: transparent;
+  border: 0;
+  padding: 6px 0;
+  color: var(--secondary-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link-muted {
+  color: var(--muted);
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.text-link:hover {
+  opacity: 0.9;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 60;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
+.modal-title {
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.modal-actions a {
+  color: var(--secondary-text);
+}
+
 /* New layout */
 .setup {
   min-height: 100vh;
@@ -556,6 +611,9 @@ button.danger {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .sidebar-controls {

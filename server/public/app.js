@@ -43,6 +43,11 @@ const enableNotificationsBtn = qs('enableNotifications');
 const appNameTitleEl = qs('appNameTitle');
 const appNameHeaderEl = qs('appNameHeader');
 
+const aboutLinkSetupBtn = qs('aboutLinkSetup');
+const aboutLinkSidebarBtn = qs('aboutLinkSidebar');
+const aboutModalEl = qs('aboutModal');
+const aboutCloseBtn = qs('aboutClose');
+
 const setupForm = qs('setupForm');
 
 const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
@@ -81,6 +86,16 @@ async function loadAppName() {
   } catch {
     // ignore
   }
+}
+
+function openAbout() {
+  if (!aboutModalEl) return;
+  aboutModalEl.classList.remove('hidden');
+}
+
+function closeAbout() {
+  if (!aboutModalEl) return;
+  aboutModalEl.classList.add('hidden');
 }
 
 const THEME_ORDER = ['system', 'light', 'dark'];
@@ -1417,6 +1432,18 @@ chatInput?.addEventListener('keydown', (e) => {
 filterPrivateEl?.addEventListener('change', applyChatFilter);
 filterPublicEl?.addEventListener('change', applyChatFilter);
 filterSystemEl?.addEventListener('change', applyChatFilter);
+
+aboutLinkSetupBtn?.addEventListener('click', openAbout);
+aboutLinkSidebarBtn?.addEventListener('click', openAbout);
+aboutCloseBtn?.addEventListener('click', closeAbout);
+aboutModalEl?.addEventListener('click', (e) => {
+  // Click outside the card closes.
+  if (e.target === aboutModalEl) closeAbout();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeAbout();
+});
 
 setView('setup');
 

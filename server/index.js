@@ -32,6 +32,7 @@ const PUSH_ENABLED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 // Visual branding
 const APP_NAME = (process.env.APP_NAME ?? 'Last').trim() || 'Last';
 
+
 if (PUSH_ENABLED) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }

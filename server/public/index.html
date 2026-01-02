@@ -41,6 +41,8 @@
             <div id="setupStatus" class="status" aria-live="polite"></div>
 
             <div class="hint">Press Enter to join. Microphone permission will be requested after you join.</div>
+
+            <button id="aboutLinkSetup" class="text-link text-link-muted" type="button">About</button>
           </form>
         </div>
       </section>
@@ -90,6 +92,7 @@
             <div class="sidebar-footer">
               <div id="lobbyStatus" class="status"></div>
               <div id="techInfo" class="muted"></div>
+              <button id="aboutLinkSidebar" class="text-link text-link-muted" type="button">About</button>
             </div>
           </aside>
 
@@ -128,6 +131,17 @@
           <div class="row">
             <button id="accept" type="button">Accept</button>
             <button id="reject" class="secondary" type="button">Reject</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="aboutModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+        <div class="modal-card">
+          <div class="modal-title" id="aboutTitle">About</div>
+          <div id="aboutText" class="muted">Last is an ephemeral, registration-less, audio-only WebRTC communicator. No accounts, no cookies, no saved sessions.</div>
+          <div class="modal-actions">
+            <a id="aboutRepo" href="https://github.com/Preon1/last" target="_blank" rel="noopener noreferrer">Git repository</a>
+            <button id="aboutClose" class="secondary" type="button">Close</button>
           </div>
         </div>
       </div>

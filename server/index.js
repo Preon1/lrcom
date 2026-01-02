@@ -29,8 +29,8 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT ?? 'mailto:lrcom@localhost';
 const PUSH_ENABLED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 
-// Visual branding (header + setup title only)
-const APP_NAME = (process.env.APP_NAME ?? 'LRcom').trim() || 'LRcom';
+// Visual branding
+const APP_NAME = (process.env.APP_NAME ?? 'Last').trim() || 'Last';
 
 if (PUSH_ENABLED) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -326,7 +326,7 @@ function broadcastChat(fromUser, text) {
 
     if (u.id !== fromUser.id) {
       void sendPushToUser(u.id, {
-        title: 'LRcom message',
+        title: `${APP_NAME} message`,
         body: `${fromUser.name}: ${text}`,
         tag: 'lrcom-chat',
         url: '/',
@@ -369,7 +369,7 @@ function sendPrivateChat(fromUser, toUser, text) {
   if (toUser.ws.readyState === 1) toUser.ws.send(msg);
 
   void sendPushToUser(toUser.id, {
-    title: 'LRcom private message',
+    title: `${APP_NAME} private message`,
     body: `${fromUser.name}: ${text}`,
     tag: 'lrcom-pm',
     url: '/',
@@ -688,6 +688,6 @@ wss.on('connection', (ws, req) => {
 server.listen(PORT, HOST, () => {
   // Intentionally minimal logs
   if (process.env.STARTUP_LOG === '1') {
-    console.log(`LRcom listening on ${USE_HTTPS ? 'https' : 'http'}://${HOST}:${PORT}`);
+    console.log(`${APP_NAME} listening on ${USE_HTTPS ? 'https' : 'http'}://${HOST}:${PORT}`);
   }
 });

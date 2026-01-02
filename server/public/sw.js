@@ -18,7 +18,7 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const title = data.title || 'LRcom';
+  const title = data.title || 'Last';
   const body = data.body || '';
   const tag = data.tag || 'lrcom';
   const url = data.url || '/';

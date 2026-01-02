@@ -1,4 +1,4 @@
-# LRcom app container
+# Last app container
 FROM node:20-alpine
 
 RUN apk add --no-cache openssl

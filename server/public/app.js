@@ -49,12 +49,14 @@ const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
 const debugPanel = qs('debugPanel');
 const debugLogEl = qs('debugLog');
 
+let appName = 'Last';
+
 function logDebug(...args) {
   const ts = new Date().toISOString();
   const line = `[${ts}] ${args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`;
   // Always log to console to help diagnose remote issues.
   // (No persistence; this is runtime-only.)
-  console.log('LRcom', line);
+  console.log(appName, line);
 
   if (debugEnabled && debugLogEl) {
     debugLogEl.textContent += line + '\n';
@@ -69,8 +71,13 @@ async function loadAppName() {
     const cfg = await res.json();
     const name = typeof cfg?.appName === 'string' ? cfg.appName.trim() : '';
     if (!name) return;
+    appName = name;
     if (appNameTitleEl) appNameTitleEl.textContent = name;
     if (appNameHeaderEl) appNameHeaderEl.textContent = name;
+    document.title = name;
+
+    const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (appleTitle) appleTitle.setAttribute('content', name);
   } catch {
     // ignore
   }
@@ -1376,7 +1383,7 @@ document.addEventListener('click', (e) => {
 });
 
 leaveBtn.addEventListener('click', () => {
-  if (confirm('Logout and leave LRcom?')) leave();
+  if (confirm(`Logout and leave ${appName}?`)) leave();
 });
 hangupBtn.addEventListener('click', hangup);
 

@@ -1,4 +1,4 @@
-# LRcom (Last Resort Communication)
+# Last (Last Resort Communication)
 
 Minimal ephemeral voice chat: open the page, enter a name, see online users, click to call, accept/reject incoming calls.
 
@@ -42,7 +42,7 @@ For LAN/Internet use, put it behind HTTPS (recommended) or mount certs and enabl
 
 By default, the container generates a **self-signed** certificate (personal/private use). Your browser will show a warning unless you add the cert to your trust store.
 
-If you want a “clean” trusted setup, put LRcom behind a proper reverse proxy with a real certificate.
+If you want a “clean” trusted setup, put Last behind a proper reverse proxy with a real certificate.
 
 ### Using your own cert
 
@@ -66,7 +66,7 @@ services:
 
 ### LAN access (important)
 
-If you access LRcom via your LAN IP (e.g. `https://192.168.1.50:8443`), the certificate must include that IP in **SANs**.
+If you access Last via your LAN IP (e.g. `https://192.168.1.50:8443`), the certificate must include that IP in **SANs**.
 
 Set (Windows example):
 
@@ -76,11 +76,11 @@ setx LRCOM_TLS_SANS "DNS:localhost,IP:127.0.0.1,IP:192.168.1.50"
 
 ## TURN server
 
-`docker-compose.yml` includes a coturn service for NAT traversal. LRcom generates time-limited TURN credentials from `TURN_SECRET`.
+`docker-compose.yml` includes a coturn service for NAT traversal. Last generates time-limited TURN credentials from `TURN_SECRET`.
 
 Set these env vars (recommended):
 
-- `LRCOM_TURN_SECRET`: shared secret used by both LRcom and coturn
+- `LRCOM_TURN_SECRET`: shared secret used by both Last and coturn
 - `LRCOM_TURN_HOST`: hostname/IP that browsers should use to reach TURN (e.g. `localhost`, your LAN IP, or your domain)
 - `LRCOM_TURN_EXTERNAL_IP`: often required when coturn runs in Docker so relay addresses are reachable (set to your host LAN/public IP)
 

@@ -1,6 +1,6 @@
 {
-  "name": "LRcom",
-  "short_name": "LRcom",
+  "name": "Last",
+  "short_name": "Last",
   "icons": [
     {
       "src": "./web-app-manifest-192x192.png",

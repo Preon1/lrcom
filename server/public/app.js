@@ -763,10 +763,42 @@ function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }
 
   const body = document.createElement('div');
   body.className = 'chat-text';
-  body.textContent = text;
 
-  line.appendChild(meta);
-  line.appendChild(body);
+  if (isReply) {
+    const banner = document.createElement('div');
+    banner.className = 'chat-reply-banner';
+    banner.textContent = `Reply to ${reply.replyToName} • ${reply.replyToTime}`;
+    body.textContent = reply.replyBody;
+    inner.appendChild(meta);
+    inner.appendChild(banner);
+    inner.appendChild(body);
+
+    inner.addEventListener('click', () => {
+      scrollToReferencedMessage(reply.replyToName, reply.replyToTime);
+    });
+  } else {
+    body.textContent = text;
+    inner.appendChild(meta);
+    inner.appendChild(body);
+  }
+
+  swipe.appendChild(action);
+  swipe.appendChild(inner);
+  line.appendChild(swipe);
+
+  // Desktop: right-click context menu to reply.
+  line.addEventListener('contextmenu', (e) => {
+    if (isMobileTextEntry()) return;
+    if (fromName === 'System') return;
+    e.preventDefault();
+    showReplyContextMenu(e.pageX, e.pageY, { fromName, time });
+  });
+
+  // Mobile: swipe left to reply.
+  if (fromName !== 'System') {
+    attachSwipeReply(line, { fromName, time });
+  }
+
   chatMessagesEl.appendChild(line);
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 
@@ -874,40 +906,10 @@ async function ensurePeerConnection(peerId) {
   });
 
   return pc;
+}
 
-    if (isReply) {
-      const banner = document.createElement('div');
-      banner.className = 'chat-reply-banner';
-      banner.textContent = `Reply to ${reply.replyToName} • ${reply.replyToTime}`;
-      body.textContent = reply.replyBody;
-      inner.appendChild(meta);
-      inner.appendChild(banner);
-      inner.appendChild(body);
-      inner.addEventListener('click', () => {
-        scrollToReferencedMessage(reply.replyToName, reply.replyToTime);
-      });
-    } else {
-      body.textContent = text;
-      inner.appendChild(meta);
-      inner.appendChild(body);
-    }
-
-    swipe.appendChild(action);
-    swipe.appendChild(inner);
-    line.appendChild(swipe);
-
-    // Desktop: right-click context menu to reply.
-    line.addEventListener('contextmenu', (e) => {
-      if (isMobileTextEntry()) return;
-      if (fromName === 'System') return;
-      e.preventDefault();
-      showReplyContextMenu(e.pageX, e.pageY, { fromName, time });
-    });
-
-    // Mobile: swipe left to reply.
-    if (fromName !== 'System') {
-      attachSwipeReply(line, { fromName, time });
-    }
+async function startCall(peerId, peerName) {
+  setText(lobbyStatus, roomId ? 'Inviting…' : 'Calling…');
   peerNames.set(peerId, peerName);
   updateCallHeader();
   send({ type: 'callStart', to: peerId });

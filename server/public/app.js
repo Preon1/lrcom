@@ -40,6 +40,9 @@ const themeToggleSetupBtn = qs('themeToggleSetup');
 const themeToggleHeaderBtn = qs('themeToggleHeader');
 const enableNotificationsBtn = qs('enableNotifications');
 
+const appNameTitleEl = qs('appNameTitle');
+const appNameHeaderEl = qs('appNameHeader');
+
 const setupForm = qs('setupForm');
 
 const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
@@ -56,6 +59,20 @@ function logDebug(...args) {
   if (debugEnabled && debugLogEl) {
     debugLogEl.textContent += line + '\n';
     debugLogEl.scrollTop = debugLogEl.scrollHeight;
+  }
+}
+
+async function loadAppName() {
+  try {
+    const res = await fetch('/api/config', { cache: 'no-store' });
+    if (!res.ok) return;
+    const cfg = await res.json();
+    const name = typeof cfg?.appName === 'string' ? cfg.appName.trim() : '';
+    if (!name) return;
+    if (appNameTitleEl) appNameTitleEl.textContent = name;
+    if (appNameHeaderEl) appNameHeaderEl.textContent = name;
+  } catch {
+    // ignore
   }
 }
 
@@ -108,6 +125,9 @@ let ringtoneGain;
 
 let wakeLock = null;
 let swRegistration = null;
+
+// Apply container-configured app name (header + setup title only)
+void loadAppName();
 
 function notificationsSupported() {
   return typeof window !== 'undefined' && 'Notification' in window;

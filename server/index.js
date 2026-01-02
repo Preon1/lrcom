@@ -29,6 +29,9 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT ?? 'mailto:lrcom@localhost';
 const PUSH_ENABLED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 
+// Visual branding (header + setup title only)
+const APP_NAME = (process.env.APP_NAME ?? 'LRcom').trim() || 'LRcom';
+
 if (PUSH_ENABLED) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
@@ -85,6 +88,11 @@ app.get('/turn', (req, res) => {
 app.get('/api/push/public-key', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ enabled: PUSH_ENABLED, publicKey: PUSH_ENABLED ? VAPID_PUBLIC_KEY : null });
+});
+
+app.get('/api/config', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ appName: APP_NAME });
 });
 
 function makeTurnCredentials() {

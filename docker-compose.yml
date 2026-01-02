@@ -4,6 +4,9 @@ services:
     ports:
       - "8443:8443"
     environment:
+      # Visual app name (changes header + setup title only)
+      - APP_NAME=${LRCOM_APP_NAME:-LRcom}
+
       # For real microphone access remotely, serve over HTTPS (or use a reverse proxy).
       # If you mount certs, set TLS_KEY_PATH/TLS_CERT_PATH accordingly.
       - HOST=0.0.0.0

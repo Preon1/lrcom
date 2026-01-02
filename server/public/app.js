@@ -39,6 +39,8 @@ const filterSystemEl = qs('filterSystem');
 const themeToggleSetupBtn = qs('themeToggleSetup');
 const themeToggleHeaderBtn = qs('themeToggleHeader');
 
+const setupForm = qs('setupForm');
+
 const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
 const debugPanel = qs('debugPanel');
 const debugLogEl = qs('debugLog');
@@ -557,7 +559,7 @@ function leave() {
   setView('setup');
 }
 
-joinBtn.addEventListener('click', async () => {
+async function doJoin() {
   setText(setupStatus, 'Connecting…');
 
   const desiredName = nameInput.value.trim();
@@ -764,6 +766,23 @@ joinBtn.addEventListener('click', async () => {
     logDebug('ws error');
     setText(setupStatus, 'Connection error.');
   });
+}
+
+joinBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  doJoin();
+});
+
+setupForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  doJoin();
+});
+
+nameInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    doJoin();
+  }
 });
 
 toggleUsersBtn?.addEventListener('click', () => {

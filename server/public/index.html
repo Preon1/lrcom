@@ -16,24 +16,29 @@
     <main>
       <section id="setup" class="setup">
         <div class="setup-card">
-          <h1 class="brand-title"><img class="logo" src="./lrcom_logo.png" alt="LRcom" /><span>LRcom</span></h1>
-          <p class="muted">This app is ephemeral: no accounts, no cookies, no saved sessions.</p>
-
-          <div class="row">
+          <div class="setup-header">
+            <div class="setup-brand">
+              <img class="logo logo-lg" src="./lrcom_logo.png" alt="LRcom" />
+              <div>
+                <div class="setup-title">LRcom</div>
+                <div class="setup-subtitle muted">No accounts, no cookies, no saved sessions.</div>
+              </div>
+            </div>
             <button id="themeToggleSetup" class="secondary" type="button" aria-label="Toggle theme">Theme: System</button>
           </div>
 
-          <div class="row">
-            <label for="name">Your name</label>
-            <input id="name" maxlength="32" autocomplete="off" inputmode="text" placeholder="e.g. Alex" />
-          </div>
+          <form id="setupForm" class="setup-form" autocomplete="off">
+            <label class="field" for="name">
+              <span class="field-label">Your name</span>
+              <input id="name" maxlength="32" inputmode="text" placeholder="e.g. Alex" />
+            </label>
 
-          <div class="row">
-            <button id="join" type="button">Join</button>
-            <span id="setupStatus" class="status"></span>
-          </div>
+            <button id="join" class="join" type="submit">Join</button>
 
-          <p class="hint">Microphone permission will be requested after you join.</p>
+            <div id="setupStatus" class="status" aria-live="polite"></div>
+
+            <div class="hint">Press Enter to join. Microphone permission will be requested after you join.</div>
+          </form>
         </div>
       </section>
 

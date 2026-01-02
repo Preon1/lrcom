@@ -4,6 +4,7 @@ const setupEl = qs('setup');
 const lobbyEl = qs('lobby');
 const callEl = qs('call');
 const incomingEl = qs('incoming');
+const chatEl = qs('chat');
 
 const nameInput = qs('name');
 const joinBtn = qs('join');
@@ -23,6 +24,13 @@ const rejectBtn = qs('reject');
 const callerNameEl = qs('callerName');
 
 const remoteAudio = qs('remoteAudio');
+
+const chatMessagesEl = qs('chatMessages');
+const chatInput = qs('chatInput');
+const chatSendBtn = qs('chatSend');
+const filterPrivateEl = qs('filterPrivate');
+const filterPublicEl = qs('filterPublic');
+const filterSystemEl = qs('filterSystem');
 
 const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
 const debugPanel = qs('debugPanel');
@@ -51,6 +59,8 @@ let pc;
 let localStream;
 let iceConfig;
 
+let chatMessages = [];
+
 let ringtoneCtx;
 let ringtoneOsc;
 let ringtoneGain;
@@ -59,6 +69,8 @@ function setView(view) {
   setupEl.classList.toggle('hidden', view !== 'setup');
   lobbyEl.classList.toggle('hidden', view !== 'lobby');
   callEl.classList.toggle('hidden', view !== 'call');
+  // Chat is visible whenever you're joined (lobby or call)
+  chatEl.classList.toggle('hidden', view === 'setup');
 }
 
 function showIncoming(show) {
@@ -150,13 +162,32 @@ function renderUsers(users) {
     left.appendChild(name);
     left.appendChild(meta);
 
-    const btn = document.createElement('button');
-    btn.textContent = 'Call';
-    btn.disabled = Boolean(u.busy) || Boolean(currentPeer);
-    btn.addEventListener('click', () => startCall(u.id, u.name));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const messageBtn = document.createElement('button');
+    messageBtn.className = 'secondary';
+    messageBtn.textContent = 'Message';
+    messageBtn.addEventListener('click', () => {
+      const needsQuotes = /\s/.test(u.name);
+      const prefix = needsQuotes ? `@"${u.name}" ` : `@${u.name} `;
+      if (chatInput) {
+        chatInput.value = prefix;
+        chatInput.focus();
+        chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+      }
+    });
+
+    const callBtn = document.createElement('button');
+    callBtn.textContent = 'Call';
+    callBtn.disabled = Boolean(u.busy) || Boolean(currentPeer);
+    callBtn.addEventListener('click', () => startCall(u.id, u.name));
+
+    actions.appendChild(messageBtn);
+    actions.appendChild(callBtn);
 
     li.appendChild(left);
-    li.appendChild(btn);
+    li.appendChild(actions);
     usersEl.appendChild(li);
   }
 }
@@ -189,6 +220,77 @@ function resetCallState() {
 
   stopRingtone();
   showIncoming(false);
+}
+
+function clearChat() {
+  chatMessages = [];
+  if (chatMessagesEl) chatMessagesEl.innerHTML = '';
+}
+
+function getChatKind({ fromName, private: isPrivate }) {
+  if (fromName === 'System') return 'system';
+  if (isPrivate) return 'private';
+  return 'public';
+}
+
+function applyChatFilter() {
+  if (!chatMessagesEl) return;
+  const showPrivate = filterPrivateEl?.checked ?? true;
+  const showPublic = filterPublicEl?.checked ?? true;
+  const showSystem = filterSystemEl?.checked ?? true;
+
+  for (const el of Array.from(chatMessagesEl.children)) {
+    const kind = el.dataset.kind;
+    const visible = (kind === 'private' && showPrivate)
+      || (kind === 'public' && showPublic)
+      || (kind === 'system' && showSystem);
+    el.classList.toggle('chat-hidden', !visible);
+  }
+}
+
+function renderChatMessage({ atIso, fromName, text, private: isPrivate, toName }) {
+  if (!chatMessagesEl) return;
+
+  const line = document.createElement('div');
+  line.className = 'chat-line';
+  line.dataset.kind = getChatKind({ fromName, private: isPrivate });
+
+  const meta = document.createElement('div');
+  meta.className = 'chat-meta';
+  const at = new Date(atIso);
+
+  const time = isNaN(at.getTime()) ? atIso : at.toLocaleString();
+  if (isPrivate) {
+    const badge = document.createElement('span');
+    badge.className = 'chat-badge chat-badge-private';
+    badge.textContent = 'private';
+
+    const textNode = document.createElement('span');
+    textNode.textContent = ` ${fromName}${toName ? ` → ${toName}` : ''} • ${time}`;
+
+    meta.appendChild(badge);
+    meta.appendChild(textNode);
+  } else {
+    meta.textContent = `${fromName} • ${time}`;
+  }
+
+  const body = document.createElement('div');
+  body.className = 'chat-text';
+  body.textContent = text;
+
+  line.appendChild(meta);
+  line.appendChild(body);
+  chatMessagesEl.appendChild(line);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+  applyChatFilter();
+}
+
+function sendChat() {
+  const text = (chatInput?.value ?? '').trim();
+  if (!text) return;
+  send({ type: 'chatSend', text });
+  if (chatInput) chatInput.value = '';
 }
 
 async function createPeerConnection() {
@@ -344,6 +446,7 @@ function leave() {
   ws = null;
 
   resetCallState();
+  clearChat();
   myId = null;
   myName = null;
   iceConfig = null;
@@ -418,6 +521,19 @@ joinBtn.addEventListener('click', async () => {
 
     if (msg.type === 'presence') {
       renderUsers(msg.users ?? []);
+      return;
+    }
+
+    if (msg.type === 'chat') {
+      const entry = {
+        atIso: msg.atIso,
+        fromName: msg.fromName,
+        text: msg.text,
+        private: Boolean(msg.private),
+        toName: msg.toName ?? null,
+      };
+      chatMessages.push(entry);
+      renderChatMessage(entry);
       return;
     }
 
@@ -513,6 +629,15 @@ rejectBtn.addEventListener('click', rejectIncoming);
 window.addEventListener('beforeunload', () => {
   try { ws?.close(); } catch {}
 });
+
+chatSendBtn?.addEventListener('click', sendChat);
+chatInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChat();
+});
+
+filterPrivateEl?.addEventListener('change', applyChatFilter);
+filterPublicEl?.addEventListener('change', applyChatFilter);
+filterSystemEl?.addEventListener('change', applyChatFilter);
 
 setView('setup');
 

@@ -44,6 +44,21 @@
         <div id="lobbyStatus" class="status"></div>
       </section>
 
+      <section id="chat" class="card hidden">
+        <h2>Chat</h2>
+        <div class="chat-filters">
+          <label class="chat-filter"><input id="filterPrivate" type="checkbox" checked /> Private</label>
+          <label class="chat-filter"><input id="filterPublic" type="checkbox" checked /> Public</label>
+          <label class="chat-filter"><input id="filterSystem" type="checkbox" checked /> System</label>
+        </div>
+        <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+        <div class="row">
+          <input id="chatInput" maxlength="500" autocomplete="off" inputmode="text" placeholder="Type a message…" />
+          <button id="chatSend">Send</button>
+        </div>
+        <div class="muted">Messages are not saved; they exist only while you’re connected.</div>
+      </section>
+
       <section id="call" class="card hidden">
         <div class="row between">
           <div>

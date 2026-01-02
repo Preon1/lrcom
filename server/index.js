@@ -104,6 +104,15 @@ function safeName(input) {
   return trimmed;
 }
 
+function safeChatText(input) {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (trimmed.length < 1 || trimmed.length > 500) return null;
+  // Avoid control characters
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) return null;
+  return trimmed;
+}
+
 function makeId() {
   return crypto.randomBytes(12).toString('hex');
 }
@@ -135,6 +144,82 @@ function broadcastPresence() {
   }
 }
 
+function broadcastChat(fromUser, text) {
+  const atIso = new Date().toISOString();
+  const msg = JSON.stringify({
+    type: 'chat',
+    atIso,
+    from: fromUser.id,
+    fromName: fromUser.name,
+    text,
+    private: false,
+  });
+
+  for (const u of users.values()) {
+    if (!u.name) continue;
+    if (u.ws.readyState === 1) u.ws.send(msg);
+  }
+}
+
+function broadcastSystem(text) {
+  const atIso = new Date().toISOString();
+  const msg = JSON.stringify({
+    type: 'chat',
+    atIso,
+    from: null,
+    fromName: 'System',
+    text,
+    private: false,
+  });
+
+  for (const u of users.values()) {
+    if (!u.name) continue;
+    if (u.ws.readyState === 1) u.ws.send(msg);
+  }
+}
+
+function sendPrivateChat(fromUser, toUser, text) {
+  const atIso = new Date().toISOString();
+  const msg = JSON.stringify({
+    type: 'chat',
+    atIso,
+    from: fromUser.id,
+    fromName: fromUser.name,
+    to: toUser.id,
+    toName: toUser.name,
+    text,
+    private: true,
+  });
+
+  if (fromUser.ws.readyState === 1) fromUser.ws.send(msg);
+  if (toUser.ws.readyState === 1) toUser.ws.send(msg);
+}
+
+function parsePrivatePrefix(text) {
+  // Supports:
+  //   @Alice hello
+  //   @"Alice Doe" hello
+  if (typeof text !== 'string' || !text.startsWith('@')) return null;
+
+  if (text.startsWith('@"')) {
+    const closing = text.indexOf('"', 2);
+    if (closing === -1) return null;
+    const toName = text.slice(2, closing);
+    const rest = text.slice(closing + 1);
+    if (!rest.startsWith(' ')) return null;
+    const body = rest.trim();
+    if (!toName || !body) return null;
+    return { toName, body };
+  }
+
+  const firstSpace = text.indexOf(' ');
+  if (firstSpace === -1) return null;
+  const toName = text.slice(1, firstSpace);
+  const body = text.slice(firstSpace + 1).trim();
+  if (!toName || !body) return null;
+  return { toName, body };
+}
+
 function send(ws, obj) {
   if (ws.readyState !== 1) return;
   ws.send(JSON.stringify(obj));
@@ -143,6 +228,8 @@ function send(ws, obj) {
 function closeUser(userId) {
   const u = users.get(userId);
   if (!u) return;
+
+  const name = u.name;
 
   // If in call, notify peer
   if (u.inCallWith) {
@@ -154,7 +241,9 @@ function closeUser(userId) {
   }
 
   users.delete(userId);
-  if (nameToId.get(u.name) === userId) nameToId.delete(u.name);
+  if (name && nameToId.get(name) === userId) nameToId.delete(name);
+
+  if (name) broadcastSystem(`${name} left.`);
   broadcastPresence();
 }
 
@@ -226,6 +315,7 @@ wss.on('connection', (ws, req) => {
       user.name = name;
       nameToId.set(name, userId);
       send(ws, { type: 'nameResult', ok: true, name });
+      broadcastSystem(`${name} joined.`);
       broadcastPresence();
       return;
     }
@@ -317,6 +407,33 @@ wss.on('connection', (ws, req) => {
       }
       user.inCallWith = null;
       broadcastPresence();
+      return;
+    }
+
+    if (msg.type === 'chatSend') {
+      const raw = safeChatText(msg.text);
+      if (!raw) {
+        send(ws, { type: 'error', code: 'BAD_CHAT' });
+        return;
+      }
+
+      const pm = parsePrivatePrefix(raw);
+      if (pm) {
+        const toId = nameToId.get(pm.toName);
+        const toUser = toId ? users.get(toId) : null;
+        if (!toUser || !toUser.name) {
+          send(ws, { type: 'error', code: 'PM_NOT_FOUND' });
+          return;
+        }
+        if (toUser.id === user.id) {
+          send(ws, { type: 'error', code: 'PM_SELF' });
+          return;
+        }
+        sendPrivateChat(user, toUser, pm.body);
+        return;
+      }
+
+      broadcastChat(user, raw);
       return;
     }
 
